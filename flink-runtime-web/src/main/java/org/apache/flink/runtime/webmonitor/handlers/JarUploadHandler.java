@@ -32,11 +32,13 @@ import org.apache.flink.shaded.netty4.io.netty.handler.codec.http.HttpResponseSt
 
 import javax.annotation.Nonnull;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
@@ -54,14 +56,13 @@ public class JarUploadHandler extends
 	private final Executor executor;
 
 	public JarUploadHandler(
-			final CompletableFuture<String> localRestAddress,
 			final GatewayRetriever<? extends RestfulGateway> leaderRetriever,
 			final Time timeout,
 			final Map<String, String> responseHeaders,
 			final MessageHeaders<EmptyRequestBody, JarUploadResponseBody, EmptyMessageParameters> messageHeaders,
 			final Path jarDir,
 			final Executor executor) {
-		super(localRestAddress, leaderRetriever, timeout, responseHeaders, messageHeaders);
+		super(leaderRetriever, timeout, responseHeaders, messageHeaders);
 		this.jarDir = requireNonNull(jarDir);
 		this.executor = requireNonNull(executor);
 	}
@@ -70,18 +71,18 @@ public class JarUploadHandler extends
 	protected CompletableFuture<JarUploadResponseBody> handleRequest(
 			@Nonnull final HandlerRequest<EmptyRequestBody, EmptyMessageParameters> request,
 			@Nonnull final RestfulGateway gateway) throws RestHandlerException {
-		Collection<Path> uploadedFiles = request.getUploadedFiles();
+		Collection<File> uploadedFiles = request.getUploadedFiles();
 		if (uploadedFiles.size() != 1) {
 			throw new RestHandlerException("Exactly 1 file must be sent, received " + uploadedFiles.size() + '.', HttpResponseStatus.BAD_REQUEST);
 		}
-		final Path fileUpload = uploadedFiles.iterator().next();
+		final Path fileUpload = uploadedFiles.iterator().next().toPath();
 		return CompletableFuture.supplyAsync(() -> {
 			if (!fileUpload.getFileName().toString().endsWith(".jar")) {
 				throw new CompletionException(new RestHandlerException(
 					"Only Jar files are allowed.",
 					HttpResponseStatus.BAD_REQUEST));
 			} else {
-				final Path destination = jarDir.resolve(fileUpload.getFileName());
+				final Path destination = jarDir.resolve(UUID.randomUUID() + "_" + fileUpload.getFileName());
 				try {
 					Files.move(fileUpload, destination);
 				} catch (IOException e) {
@@ -92,7 +93,7 @@ public class JarUploadHandler extends
 						HttpResponseStatus.INTERNAL_SERVER_ERROR,
 						e));
 				}
-				return new JarUploadResponseBody(fileUpload
+				return new JarUploadResponseBody(destination
 					.normalize()
 					.toString());
 			}

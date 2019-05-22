@@ -27,7 +27,6 @@ import org.apache.flink.runtime.io.network.buffer.BufferPool;
 import org.apache.flink.runtime.io.network.buffer.NetworkBufferPool;
 import org.apache.flink.runtime.io.network.partition.consumer.BufferOrEvent;
 import org.apache.flink.runtime.io.network.partition.consumer.InputGate;
-import org.apache.flink.runtime.io.network.partition.consumer.InputGateListener;
 
 import org.junit.Test;
 
@@ -130,25 +129,38 @@ public class BarrierBufferMassiveRandomTest {
 		}
 	}
 
-	private static class RandomGeneratingInputGate implements InputGate {
+	private static class RandomGeneratingInputGate extends InputGate {
 
-		private final int numChannels;
+		private final int numberOfChannels;
 		private final BufferPool[] bufferPools;
 		private final int[] currentBarriers;
 		private final BarrierGenerator[] barrierGens;
 		private int currentChannel = 0;
 		private long c = 0;
 
+		private final String owningTaskName;
+
 		public RandomGeneratingInputGate(BufferPool[] bufferPools, BarrierGenerator[] barrierGens) {
-			this.numChannels = bufferPools.length;
-			this.currentBarriers = new int[numChannels];
+			this(bufferPools, barrierGens, "TestTask");
+		}
+
+		public RandomGeneratingInputGate(BufferPool[] bufferPools, BarrierGenerator[] barrierGens, String owningTaskName) {
+			this.numberOfChannels = bufferPools.length;
+			this.currentBarriers = new int[numberOfChannels];
 			this.bufferPools = bufferPools;
 			this.barrierGens = barrierGens;
+			this.owningTaskName = owningTaskName;
+			this.isAvailable = AVAILABLE;
 		}
 
 		@Override
 		public int getNumberOfInputChannels() {
-			return numChannels;
+			return numberOfChannels;
+		}
+
+		@Override
+		public String getOwningTaskName() {
+			return owningTaskName;
 		}
 
 		@Override
@@ -161,7 +173,7 @@ public class BarrierBufferMassiveRandomTest {
 
 		@Override
 		public Optional<BufferOrEvent> getNextBufferOrEvent() throws IOException, InterruptedException {
-			currentChannel = (currentChannel + 1) % numChannels;
+			currentChannel = (currentChannel + 1) % numberOfChannels;
 
 			if (barrierGens[currentChannel].isNextBarrier()) {
 				return Optional.of(
@@ -187,11 +199,12 @@ public class BarrierBufferMassiveRandomTest {
 		public void sendTaskEvent(TaskEvent event) {}
 
 		@Override
-		public void registerListener(InputGateListener listener) {}
-
-		@Override
 		public int getPageSize() {
 			return PAGE_SIZE;
+		}
+
+		@Override
+		public void close() {
 		}
 	}
 }

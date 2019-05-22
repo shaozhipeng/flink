@@ -70,6 +70,16 @@ These parameters configure the default HDFS used by Flink. Setups that do not sp
 
 {% include generated/task_manager_configuration.html %}
 
+For *batch* jobs (or if `taskmanager.memoy.preallocate` is enabled) Flink allocates a fraction of 0.7 of the free memory (total memory configured via taskmanager.heap.mb minus memory used for network buffers) for its managed memory. Managed memory helps Flink to run the batch operators efficiently. It prevents OutOfMemoryExceptions because Flink knows how much memory it can use to execute operations. If Flink runs out of managed memory, it utilizes disk space. Using managed memory, some operations can be performed directly on the raw data without having to deserialize the data to convert it into Java objects. All in all, managed memory improves the robustness and speed of the system.
+
+The default fraction for managed memory can be adjusted using the taskmanager.memory.fraction parameter. An absolute value may be set using taskmanager.memory.size (overrides the fraction parameter). If desired, the managed memory may be allocated outside the JVM heap. This may improve performance in setups with large memory sizes.
+
+{% include generated/task_manager_memory_configuration.html %}
+
+### Distributed Coordination
+
+{% include generated/cluster_configuration.html %}
+
 ### Distributed Coordination (via Akka)
 
 {% include generated/akka_configuration.html %}
@@ -154,6 +164,17 @@ The configuration keys in this section are independent of the used resource mana
 
 {% include generated/checkpointing_configuration.html %}
 
+### RocksDB State Backend
+
+{% include generated/rocks_db_configuration.html %}
+
+### RocksDB Configurable Options
+Specific RocksDB configurable options, provided by Flink, to create a corresponding `ConfigurableOptionsFactory`.
+And the created one would be used as default `OptionsFactory` in `RocksDBStateBackend`
+unless user define a `OptionsFactory` and set via `RocksDBStateBackend.setOptions(optionsFactory)`
+
+{% include generated/rocks_db_configurable_configuration.html %}
+
 ### Queryable State
 
 {% include generated/queryable_state_configuration.html %}
@@ -162,6 +183,16 @@ The configuration keys in this section are independent of the used resource mana
 
 {% include generated/metric_configuration.html %}
 
+### RocksDB Native Metrics
+Certain RocksDB native metrics may be forwarded to Flink's metrics reporter.
+All native metrics are scoped to operators and then further broken down by column family; values are reported as unsigned longs. 
+
+<div class="alert alert-warning">
+  <strong>Note:</strong> Enabling native metrics may cause degraded performance and should be set carefully. 
+</div>
+
+{% include generated/rocks_db_native_metric_configuration.html %}
+
 ### History Server
 
 You have to configure `jobmanager.archive.fs.dir` in order to archive terminated jobs and add it to the list of monitored directories via `historyserver.archive.fs.dir` if you want to display them via the HistoryServer's web frontend.
@@ -169,12 +200,6 @@ You have to configure `jobmanager.archive.fs.dir` in order to archive terminated
 - `jobmanager.archive.fs.dir`: Directory to upload information about terminated jobs to. You have to add this directory to the list of monitored directories of the history server via `historyserver.archive.fs.dir`.
 
 {% include generated/history_server_configuration.html %}
-
-### Slot Manager
-
-The configuration keys in this section are relevant for the SlotManager running in the ResourceManager
-
-{% include generated/slot_manager_configuration.html %}
 
 ## Legacy
 
@@ -217,10 +242,10 @@ Previously, the number of network buffers was set manually which became a quite 
 network buffers with the following configuration parameters:
 
 - `taskmanager.network.memory.fraction`: Fraction of JVM memory to use for network buffers (DEFAULT: 0.1),
-- `taskmanager.network.memory.min`: Minimum memory size for network buffers in bytes (DEFAULT: 64 MB),
-- `taskmanager.network.memory.max`: Maximum memory size for network buffers in bytes (DEFAULT: 1 GB), and
+- `taskmanager.network.memory.min`: Minimum memory size for network buffers (DEFAULT: 64MB),
+- `taskmanager.network.memory.max`: Maximum memory size for network buffers (DEFAULT: 1GB), and
 - `taskmanager.memory.segment-size`: Size of memory buffers used by the memory manager and the
-network stack in bytes (DEFAULT: 32768 (= 32 KiBytes)).
+network stack in bytes (DEFAULT: 32KB).
 
 #### Setting the Number of Network Buffers directly
 
@@ -256,9 +281,9 @@ The number and size of network buffers can be configured with the following para
 
 Although Flink aims to process as much data in main memory as possible, it is not uncommon that more data needs to be processed than memory is available. Flink's runtime is designed to write temporary data to disk to handle these situations.
 
-The `taskmanager.tmp.dirs` parameter specifies a list of directories into which Flink writes temporary files. The paths of the directories need to be separated by ':' (colon character). Flink will concurrently write (or read) one temporary file to (from) each configured directory. This way, temporary I/O can be evenly distributed over multiple independent I/O devices such as hard disks to improve performance. To leverage fast I/O devices (e.g., SSD, RAID, NAS), it is possible to specify a directory multiple times.
+The `io.tmp.dirs` parameter specifies a list of directories into which Flink writes temporary files. The paths of the directories need to be separated by ':' (colon character). Flink will concurrently write (or read) one temporary file to (from) each configured directory. This way, temporary I/O can be evenly distributed over multiple independent I/O devices such as hard disks to improve performance. To leverage fast I/O devices (e.g., SSD, RAID, NAS), it is possible to specify a directory multiple times.
 
-If the `taskmanager.tmp.dirs` parameter is not explicitly specified, Flink writes temporary data to the temporary directory of the operating system, such as */tmp* in Linux systems.
+If the `io.tmp.dirs` parameter is not explicitly specified, Flink writes temporary data to the temporary directory of the operating system, such as */tmp* in Linux systems.
 
 ### Configuring TaskManager processing slots
 

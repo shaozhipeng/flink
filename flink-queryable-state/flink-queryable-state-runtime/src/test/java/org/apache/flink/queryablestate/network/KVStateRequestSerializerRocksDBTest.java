@@ -25,19 +25,26 @@ import org.apache.flink.api.common.typeutils.base.LongSerializer;
 import org.apache.flink.api.common.typeutils.base.StringSerializer;
 import org.apache.flink.contrib.streaming.state.PredefinedOptions;
 import org.apache.flink.contrib.streaming.state.RocksDBKeyedStateBackend;
+import org.apache.flink.contrib.streaming.state.RocksDBKeyedStateBackendBuilder;
+import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;
+import org.apache.flink.core.fs.CloseableRegistry;
+import org.apache.flink.metrics.groups.UnregisteredMetricsGroup;
 import org.apache.flink.queryablestate.client.VoidNamespace;
 import org.apache.flink.queryablestate.client.VoidNamespaceSerializer;
 import org.apache.flink.runtime.query.TaskKvStateRegistry;
+import org.apache.flink.runtime.state.AbstractStateBackend;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.state.TestLocalRecoveryConfig;
 import org.apache.flink.runtime.state.internal.InternalListState;
 import org.apache.flink.runtime.state.internal.InternalMapState;
+import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
 
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.DBOptions;
+
+import java.util.Collections;
 
 import static org.mockito.Mockito.mock;
 
@@ -64,24 +71,30 @@ public final class KVStateRequestSerializerRocksDBTest {
 		// objects for RocksDB state list serialisation
 		DBOptions dbOptions = PredefinedOptions.DEFAULT.createDBOptions();
 		dbOptions.setCreateIfMissing(true);
-		ColumnFamilyOptions columnFamilyOptions = PredefinedOptions.DEFAULT.createColumnOptions();
+		ExecutionConfig executionConfig = new ExecutionConfig();
 		final RocksDBKeyedStateBackend<Long> longHeapKeyedStateBackend =
-			new RocksDBKeyedStateBackend<>(
+			new RocksDBKeyedStateBackendBuilder<>(
 				"no-op",
 				ClassLoader.getSystemClassLoader(),
 				temporaryFolder.getRoot(),
 				dbOptions,
-				columnFamilyOptions,
+				stateName -> PredefinedOptions.DEFAULT.createColumnOptions(),
 				mock(TaskKvStateRegistry.class),
 				LongSerializer.INSTANCE,
-				1, new KeyGroupRange(0, 0),
-				new ExecutionConfig(), false,
-				TestLocalRecoveryConfig.disabled()
-			);
-		longHeapKeyedStateBackend.restore(null);
+				1,
+				new KeyGroupRange(0, 0),
+				executionConfig,
+				TestLocalRecoveryConfig.disabled(),
+				RocksDBStateBackend.PriorityQueueStateType.HEAP,
+				TtlTimeProvider.DEFAULT,
+				new UnregisteredMetricsGroup(),
+				Collections.emptyList(),
+				AbstractStateBackend.getCompressionDecorator(executionConfig),
+				new CloseableRegistry()
+			).build();
 		longHeapKeyedStateBackend.setCurrentKey(key);
 
-		final InternalListState<Long, VoidNamespace, Long> listState = longHeapKeyedStateBackend.createState(VoidNamespaceSerializer.INSTANCE,
+		final InternalListState<Long, VoidNamespace, Long> listState = longHeapKeyedStateBackend.createInternalState(VoidNamespaceSerializer.INSTANCE,
 				new ListStateDescriptor<>("test", LongSerializer.INSTANCE));
 
 		KvStateRequestSerializerTest.testListSerialization(key, listState);
@@ -102,21 +115,27 @@ public final class KVStateRequestSerializerRocksDBTest {
 		// objects for RocksDB state list serialisation
 		DBOptions dbOptions = PredefinedOptions.DEFAULT.createDBOptions();
 		dbOptions.setCreateIfMissing(true);
-		ColumnFamilyOptions columnFamilyOptions = PredefinedOptions.DEFAULT.createColumnOptions();
+		ExecutionConfig executionConfig = new ExecutionConfig();
 		final RocksDBKeyedStateBackend<Long> longHeapKeyedStateBackend =
-			new RocksDBKeyedStateBackend<>(
+			new RocksDBKeyedStateBackendBuilder<>(
 				"no-op",
 				ClassLoader.getSystemClassLoader(),
 				temporaryFolder.getRoot(),
 				dbOptions,
-				columnFamilyOptions,
+				stateName -> PredefinedOptions.DEFAULT.createColumnOptions(),
 				mock(TaskKvStateRegistry.class),
 				LongSerializer.INSTANCE,
-				1, new KeyGroupRange(0, 0),
-				new ExecutionConfig(),
-				false,
-				TestLocalRecoveryConfig.disabled());
-		longHeapKeyedStateBackend.restore(null);
+				1,
+				new KeyGroupRange(0, 0),
+				executionConfig,
+				TestLocalRecoveryConfig.disabled(),
+				RocksDBStateBackend.PriorityQueueStateType.HEAP,
+				TtlTimeProvider.DEFAULT,
+				new UnregisteredMetricsGroup(),
+				Collections.emptyList(),
+				AbstractStateBackend.getCompressionDecorator(executionConfig),
+				new CloseableRegistry()
+			).build();
 		longHeapKeyedStateBackend.setCurrentKey(key);
 
 		final InternalMapState<Long, VoidNamespace, Long, String> mapState =

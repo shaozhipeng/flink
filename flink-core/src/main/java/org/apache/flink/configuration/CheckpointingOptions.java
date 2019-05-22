@@ -71,17 +71,31 @@ public class CheckpointingOptions {
 
 	/**
 	 * This option configures local recovery for this state backend. By default, local recovery is deactivated.
+	 *
+	 * <p>Local recovery currently only covers keyed state backends.
+	 * Currently, MemoryStateBackend does not support local recovery and ignore
+	 * this option.
 	 */
 	public static final ConfigOption<Boolean> LOCAL_RECOVERY = ConfigOptions
-		.key("state.backend.local-recovery")
-		.defaultValue(false);
+			.key("state.backend.local-recovery")
+			.defaultValue(false)
+			.withDescription("This option configures local recovery for this state backend. By default, local recovery is " +
+				"deactivated. Local recovery currently only covers keyed state backends. Currently, MemoryStateBackend does " +
+				"not support local recovery and ignore this option.");
 
 	/**
 	 * The config parameter defining the root directories for storing file-based state for local recovery.
+	 *
+	 * <p>Local recovery currently only covers keyed state backends.
+	 * Currently, MemoryStateBackend does not support local recovery and ignore
+	 * this option.
 	 */
 	public static final ConfigOption<String> LOCAL_RECOVERY_TASK_MANAGER_STATE_ROOT_DIRS = ConfigOptions
-		.key("taskmanager.state.local.root-dirs")
-		.noDefaultValue();
+			.key("taskmanager.state.local.root-dirs")
+			.noDefaultValue()
+			.withDescription("The config parameter defining the root directories for storing file-based state for local " +
+				"recovery. Local recovery currently only covers keyed state backends. Currently, MemoryStateBackend does " +
+				"not support local recovery and ignore this option");
 
 	// ------------------------------------------------------------------------
 	//  Options specific to the file-system-based state backends
@@ -115,15 +129,4 @@ public class CheckpointingOptions {
 			.defaultValue(1024)
 			.withDescription("The minimum size of state data files. All state chunks smaller than that are stored" +
 				" inline in the root checkpoint metadata file.");
-
-	// ------------------------------------------------------------------------
-	//  Options specific to the RocksDB state backend
-	// ------------------------------------------------------------------------
-
-	/** The local directory (on the TaskManager) where RocksDB puts its files. */
-	public static final ConfigOption<String> ROCKSDB_LOCAL_DIRECTORIES = ConfigOptions
-			.key("state.backend.rocksdb.localdir")
-			.noDefaultValue()
-			.withDeprecatedKeys("state.backend.rocksdb.checkpointdir")
-			.withDescription("The local directory (on the TaskManager) where RocksDB puts its files.");
 }

@@ -32,8 +32,8 @@ import org.apache.flink.optimizer.plantranslate.JobGraphGenerator;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobStatus;
 import org.apache.flink.runtime.testingUtils.TestingUtils;
-import org.apache.flink.test.util.MiniClusterResource;
-import org.apache.flink.test.util.MiniClusterResourceConfiguration;
+import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
+import org.apache.flink.test.util.MiniClusterWithClientResource;
 import org.apache.flink.util.TestLogger;
 
 import org.junit.Assert;
@@ -53,10 +53,12 @@ public abstract class CancelingTestBase extends TestLogger {
 
 	protected static final int PARALLELISM = 4;
 
+	protected static final long GET_FUTURE_TIMEOUT = 1000; // 1000 milliseconds
+
 	// --------------------------------------------------------------------------------------------
 
 	@ClassRule
-	public static final MiniClusterResource CLUSTER = new MiniClusterResource(
+	public static final MiniClusterWithClientResource CLUSTER = new MiniClusterWithClientResource(
 		new MiniClusterResourceConfiguration.Builder()
 			.setConfiguration(getConfiguration())
 			.setNumberTaskManagers(2)
@@ -76,7 +78,7 @@ public abstract class CancelingTestBase extends TestLogger {
 		Configuration config = new Configuration();
 		config.setBoolean(CoreOptions.FILESYTEM_DEFAULT_OVERRIDE, true);
 		config.setString(AkkaOptions.ASK_TIMEOUT, TestingUtils.DEFAULT_AKKA_ASK_TIMEOUT());
-		config.setInteger(TaskManagerOptions.MEMORY_SEGMENT_SIZE, 4096);
+		config.setString(TaskManagerOptions.MEMORY_SEGMENT_SIZE, "4096");
 		config.setInteger(TaskManagerOptions.NETWORK_NUM_BUFFERS, 2048);
 
 		return config;
@@ -95,10 +97,10 @@ public abstract class CancelingTestBase extends TestLogger {
 
 		Deadline submissionDeadLine = new FiniteDuration(2, TimeUnit.MINUTES).fromNow();
 
-		JobStatus jobStatus = client.getJobStatus(jobSubmissionResult.getJobID()).get(submissionDeadLine.timeLeft().toMillis(), TimeUnit.MILLISECONDS);
+		JobStatus jobStatus = client.getJobStatus(jobSubmissionResult.getJobID()).get(GET_FUTURE_TIMEOUT, TimeUnit.MILLISECONDS);
 		while (jobStatus != JobStatus.RUNNING && submissionDeadLine.hasTimeLeft()) {
 			Thread.sleep(50);
-			jobStatus = client.getJobStatus(jobSubmissionResult.getJobID()).get(submissionDeadLine.timeLeft().toMillis(), TimeUnit.MILLISECONDS);
+			jobStatus = client.getJobStatus(jobSubmissionResult.getJobID()).get(GET_FUTURE_TIMEOUT, TimeUnit.MILLISECONDS);
 		}
 		if (jobStatus != JobStatus.RUNNING) {
 			Assert.fail("Job not in state RUNNING.");
@@ -110,10 +112,10 @@ public abstract class CancelingTestBase extends TestLogger {
 
 		Deadline cancelDeadline = new FiniteDuration(maxTimeTillCanceled, TimeUnit.MILLISECONDS).fromNow();
 
-		JobStatus jobStatusAfterCancel = client.getJobStatus(jobSubmissionResult.getJobID()).get(cancelDeadline.timeLeft().toMillis(), TimeUnit.MILLISECONDS);
+		JobStatus jobStatusAfterCancel = client.getJobStatus(jobSubmissionResult.getJobID()).get(GET_FUTURE_TIMEOUT, TimeUnit.MILLISECONDS);
 		while (jobStatusAfterCancel != JobStatus.CANCELED && cancelDeadline.hasTimeLeft()) {
 			Thread.sleep(50);
-			jobStatusAfterCancel = client.getJobStatus(jobSubmissionResult.getJobID()).get(cancelDeadline.timeLeft().toMillis(), TimeUnit.MILLISECONDS);
+			jobStatusAfterCancel = client.getJobStatus(jobSubmissionResult.getJobID()).get(GET_FUTURE_TIMEOUT, TimeUnit.MILLISECONDS);
 		}
 		if (jobStatusAfterCancel != JobStatus.CANCELED) {
 			Assert.fail("Failed to cancel job with ID " + jobSubmissionResult.getJobID() + '.');

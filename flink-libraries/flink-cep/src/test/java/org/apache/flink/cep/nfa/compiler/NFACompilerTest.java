@@ -21,11 +21,11 @@ package org.apache.flink.cep.nfa.compiler;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.cep.Event;
 import org.apache.flink.cep.SubEvent;
-import org.apache.flink.cep.nfa.AfterMatchSkipStrategy;
 import org.apache.flink.cep.nfa.NFA;
 import org.apache.flink.cep.nfa.State;
 import org.apache.flink.cep.nfa.StateTransition;
 import org.apache.flink.cep.nfa.StateTransitionAction;
+import org.apache.flink.cep.nfa.aftermatch.AfterMatchSkipStrategy;
 import org.apache.flink.cep.pattern.MalformedPatternException;
 import org.apache.flink.cep.pattern.Pattern;
 import org.apache.flink.cep.pattern.conditions.SimpleCondition;
@@ -44,7 +44,9 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.apache.flink.cep.utils.NFAUtils.compile;
+import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -226,4 +228,14 @@ public class NFACompilerTest extends TestLogger {
 		return transitions;
 	}
 
+	@Test
+	public void testCheckingEmptyMatches() {
+		assertThat(NFACompiler.canProduceEmptyMatches(Pattern.begin("a").optional()), is(true));
+		assertThat(NFACompiler.canProduceEmptyMatches(Pattern.begin("a").oneOrMore().optional()), is(true));
+		assertThat(NFACompiler.canProduceEmptyMatches(Pattern.begin("a").oneOrMore().optional().next("b").optional()), is(true));
+
+		assertThat(NFACompiler.canProduceEmptyMatches(Pattern.begin("a")), is(false));
+		assertThat(NFACompiler.canProduceEmptyMatches(Pattern.begin("a").oneOrMore()), is(false));
+		assertThat(NFACompiler.canProduceEmptyMatches(Pattern.begin("a").oneOrMore().next("b").optional()), is(false));
+	}
 }

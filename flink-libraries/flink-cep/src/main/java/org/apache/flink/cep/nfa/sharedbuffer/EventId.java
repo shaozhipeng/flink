@@ -18,20 +18,21 @@
 
 package org.apache.flink.cep.nfa.sharedbuffer;
 
+import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
-import org.apache.flink.api.common.typeutils.base.IntSerializer;
-import org.apache.flink.api.common.typeutils.base.LongSerializer;
+import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.base.TypeSerializerSingleton;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputView;
 
 import java.io.IOException;
+import java.util.Comparator;
 import java.util.Objects;
 
 /**
  * Composite key for events in {@link SharedBuffer}.
  */
-public class EventId {
+public class EventId implements Comparable<EventId> {
 	private final int id;
 	private final long timestamp;
 
@@ -47,6 +48,9 @@ public class EventId {
 	public long getTimestamp() {
 		return timestamp;
 	}
+
+	public static final Comparator<EventId> COMPARATOR = Comparator.comparingLong(EventId::getTimestamp)
+		.thenComparingInt(EventId::getId);
 
 	@Override
 	public boolean equals(Object o) {
@@ -72,6 +76,11 @@ public class EventId {
 			"id=" + id +
 			", timestamp=" + timestamp +
 			'}';
+	}
+
+	@Override
+	public int compareTo(EventId o) {
+		return COMPARATOR.compare(this, o);
 	}
 
 	/** {@link TypeSerializer} for {@link EventId}. */
@@ -106,19 +115,19 @@ public class EventId {
 
 		@Override
 		public int getLength() {
-			return 2 * LongSerializer.INSTANCE.getLength();
+			return Integer.BYTES + Long.BYTES;
 		}
 
 		@Override
 		public void serialize(EventId record, DataOutputView target) throws IOException {
-			IntSerializer.INSTANCE.serialize(record.id, target);
-			LongSerializer.INSTANCE.serialize(record.timestamp, target);
+			target.writeInt(record.id);
+			target.writeLong(record.timestamp);
 		}
 
 		@Override
 		public EventId deserialize(DataInputView source) throws IOException {
-			int id = IntSerializer.INSTANCE.deserialize(source);
-			long timestamp = LongSerializer.INSTANCE.deserialize(source);
+			int id = source.readInt();
+			long timestamp = source.readLong();
 
 			return new EventId(id, timestamp);
 		}
@@ -130,13 +139,26 @@ public class EventId {
 
 		@Override
 		public void copy(DataInputView source, DataOutputView target) throws IOException {
-			IntSerializer.INSTANCE.copy(source, target);
-			LongSerializer.INSTANCE.copy(source, target);
+			target.writeInt(source.readInt());
+			target.writeLong(source.readLong());
 		}
 
+		// -----------------------------------------------------------------------------------
+
 		@Override
-		public boolean canEqual(Object obj) {
-			return obj.getClass().equals(EventIdSerializer.class);
+		public TypeSerializerSnapshot<EventId> snapshotConfiguration() {
+			return new EventIdSerializerSnapshot();
+		}
+
+		/**
+		 * Serializer configuration snapshot for compatibility and format evolution.
+		 */
+		@SuppressWarnings("WeakerAccess")
+		public static final class EventIdSerializerSnapshot extends SimpleTypeSerializerSnapshot<EventId> {
+
+			public EventIdSerializerSnapshot() {
+				super(() -> INSTANCE);
+			}
 		}
 	}
 }

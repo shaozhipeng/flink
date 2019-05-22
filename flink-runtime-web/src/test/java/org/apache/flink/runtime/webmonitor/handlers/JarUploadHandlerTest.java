@@ -72,7 +72,6 @@ public class JarUploadHandlerTest extends TestLogger {
 
 		jarDir = temporaryFolder.newFolder().toPath();
 		jarUploadHandler = new JarUploadHandler(
-			CompletableFuture.completedFuture("localhost:12345"),
 			() -> CompletableFuture.completedFuture(mockDispatcherGateway),
 			Time.seconds(10),
 			Collections.emptyMap(),
@@ -104,7 +103,10 @@ public class JarUploadHandlerTest extends TestLogger {
 
 		final JarUploadResponseBody jarUploadResponseBody = jarUploadHandler.handleRequest(request, mockDispatcherGateway).get();
 		assertThat(jarUploadResponseBody.getStatus(), equalTo(JarUploadResponseBody.UploadStatus.success));
-		assertThat(jarUploadResponseBody.getFilename(), equalTo(uploadedFile.normalize().toString()));
+		final String returnedFileNameWithUUID = jarUploadResponseBody.getFilename();
+		assertThat(returnedFileNameWithUUID, containsString("_"));
+		final String returnedFileName = returnedFileNameWithUUID.substring(returnedFileNameWithUUID.lastIndexOf("_") + 1);
+		assertThat(returnedFileName, equalTo(uploadedFile.getFileName().toString()));
 	}
 
 	@Test
@@ -131,6 +133,6 @@ public class JarUploadHandlerTest extends TestLogger {
 			EmptyMessageParameters.getInstance(),
 			Collections.emptyMap(),
 			Collections.emptyMap(),
-			Collections.singleton(uploadedFile));
+			Collections.singleton(uploadedFile.toFile()));
 	}
 }

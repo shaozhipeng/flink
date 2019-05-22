@@ -43,6 +43,7 @@ import org.apache.flink.runtime.metrics.groups.OperatorMetricGroup;
 import org.apache.flink.runtime.metrics.groups.TaskMetricGroup;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
 import org.apache.flink.runtime.metrics.util.InterceptingOperatorMetricGroup;
+import org.apache.flink.runtime.metrics.util.InterceptingTaskMetricGroup;
 import org.apache.flink.runtime.operators.testutils.MockInputSplitProvider;
 import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
@@ -53,6 +54,7 @@ import org.apache.flink.streaming.api.graph.StreamNode;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.operators.StreamMap;
+import org.apache.flink.streaming.api.operators.StreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.streamstatus.StreamStatus;
@@ -64,6 +66,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -120,6 +123,8 @@ public class OneInputStreamTaskTest extends TestLogger {
 		testHarness.processElement(new StreamRecord<String>("Ciao", initialTime + 2));
 		expectedOutput.add(new StreamRecord<String>("Hello", initialTime + 1));
 		expectedOutput.add(new StreamRecord<String>("Ciao", initialTime + 2));
+
+		testHarness.waitForInputProcessing();
 
 		testHarness.endInput();
 
@@ -522,7 +527,7 @@ public class OneInputStreamTaskTest extends TestLogger {
 
 		CheckpointMetaData checkpointMetaData = new CheckpointMetaData(checkpointId, checkpointTimestamp);
 
-		while (!streamTask.triggerCheckpoint(checkpointMetaData, CheckpointOptions.forCheckpointWithDefaultLocation())) {}
+		while (!streamTask.triggerCheckpoint(checkpointMetaData, CheckpointOptions.forCheckpointWithDefaultLocation(), false)) {}
 
 		// since no state was set, there shouldn't be restore calls
 		assertEquals(0, TestingStreamOperator.numberRestoreCalls);
@@ -562,6 +567,7 @@ public class OneInputStreamTaskTest extends TestLogger {
 		assertEquals(numberChainedTasks, TestingStreamOperator.numberRestoreCalls);
 
 		TestingStreamOperator.numberRestoreCalls = 0;
+		TestingStreamOperator.numberSnapshotCalls = 0;
 	}
 
 	@Test
@@ -624,7 +630,7 @@ public class OneInputStreamTaskTest extends TestLogger {
 
 		final TaskMetricGroup taskMetricGroup = new UnregisteredMetricGroups.UnregisteredTaskMetricGroup() {
 			@Override
-			public OperatorMetricGroup addOperator(OperatorID operatorID, String name) {
+			public OperatorMetricGroup getOrAddOperator(OperatorID operatorID, String name) {
 				return new OperatorMetricGroup(NoOpMetricRegistry.INSTANCE, this, operatorID, name);
 			}
 		};
@@ -652,6 +658,9 @@ public class OneInputStreamTaskTest extends TestLogger {
 
 		assertEquals(numRecords, numRecordsInCounter.getCount());
 		assertEquals(numRecords * 2 * 2 * 2, numRecordsOutCounter.getCount());
+
+		testHarness.endInput();
+		testHarness.waitForTaskCompletion();
 	}
 
 	static class DuplicatingOperator extends AbstractStreamOperator<String> implements OneInputStreamOperator<String, String> {
@@ -678,15 +687,15 @@ public class OneInputStreamTaskTest extends TestLogger {
 
 		InterceptingOperatorMetricGroup headOperatorMetricGroup = new InterceptingOperatorMetricGroup();
 		InterceptingOperatorMetricGroup chainedOperatorMetricGroup = new InterceptingOperatorMetricGroup();
-		TaskMetricGroup taskMetricGroup = new UnregisteredMetricGroups.UnregisteredTaskMetricGroup() {
+		InterceptingTaskMetricGroup taskMetricGroup = new InterceptingTaskMetricGroup() {
 			@Override
-			public OperatorMetricGroup addOperator(OperatorID id, String name) {
+			public OperatorMetricGroup getOrAddOperator(OperatorID id, String name) {
 				if (id.equals(headOperatorId)) {
 					return headOperatorMetricGroup;
 				} else if (id.equals(chainedOperatorId)) {
 					return chainedOperatorMetricGroup;
 				} else {
-					return super.addOperator(id, name);
+					return super.getOrAddOperator(id, name);
 				}
 			}
 		};
@@ -702,11 +711,23 @@ public class OneInputStreamTaskTest extends TestLogger {
 		testHarness.invoke(env);
 		testHarness.waitForTaskRunning();
 
+		Gauge<Long> taskInputWatermarkGauge = (Gauge<Long>) taskMetricGroup.get(MetricNames.IO_CURRENT_INPUT_WATERMARK);
 		Gauge<Long> headInputWatermarkGauge = (Gauge<Long>) headOperatorMetricGroup.get(MetricNames.IO_CURRENT_INPUT_WATERMARK);
 		Gauge<Long> headOutputWatermarkGauge = (Gauge<Long>) headOperatorMetricGroup.get(MetricNames.IO_CURRENT_OUTPUT_WATERMARK);
 		Gauge<Long> chainedInputWatermarkGauge = (Gauge<Long>) chainedOperatorMetricGroup.get(MetricNames.IO_CURRENT_INPUT_WATERMARK);
 		Gauge<Long> chainedOutputWatermarkGauge = (Gauge<Long>) chainedOperatorMetricGroup.get(MetricNames.IO_CURRENT_OUTPUT_WATERMARK);
 
+		Assert.assertEquals("A metric was registered multiple times.",
+			5,
+			new HashSet<>(Arrays.asList(
+				taskInputWatermarkGauge,
+				headInputWatermarkGauge,
+				headOutputWatermarkGauge,
+				chainedInputWatermarkGauge,
+				chainedOutputWatermarkGauge))
+				.size());
+
+		Assert.assertEquals(Long.MIN_VALUE, taskInputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(Long.MIN_VALUE, headInputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(Long.MIN_VALUE, headOutputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(Long.MIN_VALUE, chainedInputWatermarkGauge.getValue().longValue());
@@ -714,6 +735,7 @@ public class OneInputStreamTaskTest extends TestLogger {
 
 		testHarness.processElement(new Watermark(1L));
 		testHarness.waitForInputProcessing();
+		Assert.assertEquals(1L, taskInputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(1L, headInputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(2L, headOutputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(2L, chainedInputWatermarkGauge.getValue().longValue());
@@ -721,6 +743,7 @@ public class OneInputStreamTaskTest extends TestLogger {
 
 		testHarness.processElement(new Watermark(2L));
 		testHarness.waitForInputProcessing();
+		Assert.assertEquals(2L, taskInputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(2L, headInputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(4L, headOutputWatermarkGauge.getValue().longValue());
 		Assert.assertEquals(4L, chainedInputWatermarkGauge.getValue().longValue());
@@ -775,6 +798,7 @@ public class OneInputStreamTaskTest extends TestLogger {
 					chainedIndex - 1,
 					null,
 					null,
+					(StreamOperator<?>) null,
 					null,
 					null,
 					null
@@ -784,6 +808,7 @@ public class OneInputStreamTaskTest extends TestLogger {
 					chainedIndex,
 					null,
 					null,
+					(StreamOperator<?>) null,
 					null,
 					null,
 					null
@@ -870,6 +895,11 @@ public class OneInputStreamTaskTest extends TestLogger {
 
 		public static boolean openCalled = false;
 		public static boolean closeCalled = false;
+
+		TestOpenCloseMapFunction() {
+			openCalled = false;
+			closeCalled = false;
+		}
 
 		@Override
 		public void open(Configuration parameters) throws Exception {
