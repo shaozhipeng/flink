@@ -193,7 +193,6 @@ The job graph file may be generated like this way:
 
 {% highlight java %}
 final JobGraph jobGraph = env.getStreamGraph().getJobGraph();
-jobGraph.setAllowQueuedScheduling(true);
 final String jobGraphFilename = "job.graph";
 File jobGraphFile = new File(jobGraphFilename);
 try (FileOutputStream output = new FileOutputStream(jobGraphFile);
@@ -203,8 +202,7 @@ try (FileOutputStream output = new FileOutputStream(jobGraphFile);
 {% endhighlight %}
 
 Note:
-1. Before serializing the job graph, please make sure to enable queued scheduling because slots need to be allocated lazily
-2. Make sure that all Mesos processes have the user code jar on the classpath (e.g. putting them in the lib directory)
+1. Make sure that all Mesos processes have the user code jar on the classpath (e.g. putting them in the lib directory)
 
 #### General configuration
 
@@ -214,11 +212,11 @@ For example:
 
     bin/mesos-appmaster.sh \
         -Dmesos.master=master.foobar.org:5050 \
-        -Djobmanager.heap.mb=1024 \
+        -Djobmanager.heap.size=1024m \
         -Djobmanager.rpc.port=6123 \
         -Drest.port=8081 \
         -Dmesos.resourcemanager.tasks.mem=4096 \
-        -Dtaskmanager.heap.mb=3500 \
+        -Dtaskmanager.heap.size=3500m \
         -Dtaskmanager.numberOfTaskSlots=2 \
         -Dparallelism.default=10
 
@@ -236,7 +234,7 @@ Here is an example configuration for Marathon:
 
     {
         "id": "flink",
-        "cmd": "$FLINK_HOME/bin/mesos-appmaster.sh -Djobmanager.heap.mb=1024 -Djobmanager.rpc.port=6123 -Drest.port=8081 -Dmesos.resourcemanager.tasks.mem=1024 -Dtaskmanager.heap.mb=1024 -Dtaskmanager.numberOfTaskSlots=2 -Dparallelism.default=2 -Dmesos.resourcemanager.tasks.cpus=1",
+        "cmd": "$FLINK_HOME/bin/mesos-appmaster.sh -Djobmanager.heap.size=1024m -Djobmanager.rpc.port=6123 -Drest.port=8081 -Dmesos.resourcemanager.tasks.mem=1024 -Dtaskmanager.heap.mb=1024 -Dtaskmanager.numberOfTaskSlots=2 -Dparallelism.default=2 -Dmesos.resourcemanager.tasks.cpus=1",
         "cpus": 1.0,
         "mem": 1024
     }

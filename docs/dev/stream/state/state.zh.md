@@ -87,7 +87,7 @@ managed keyed state 接口提供不同类型状态的访问接口，这些状态
 接口与 `ListState` 类似，但使用`add（T）`添加的元素会用指定的 `FoldFunction` 折叠成聚合值。
 
 * `MapState<UK, UV>`: 维护了一个映射列表。 你可以添加键值对到状态中，也可以获得反映当前所有映射的迭代器。使用 `put(UK，UV)` 或者 `putAll(Map<UK，UV>)` 添加映射。
- 使用 `get(UK)` 检索特定 key。 使用 `entries()`，`keys()` 和 `values()` 分别检索映射、键和值的可迭代视图。
+ 使用 `get(UK)` 检索特定 key。 使用 `entries()`，`keys()` 和 `values()` 分别检索映射、键和值的可迭代视图。你还可以通过 `isEmpty()` 来判断是否包含任何键值对。
 
 所有类型的状态还有一个`clear()` 方法，清除当前 key 下的状态数据，也就是当前输入元素的 key。
 
@@ -343,6 +343,35 @@ val ttlConfig = StateTtlConfig
 **注意:**
 - 这种清理方式可以在任何时候通过  `StateTtlConfig` 启用或者关闭，比如在从 savepoint 恢复时。
 
+#### Cleanup in background
+
+Besides cleanup in full snapshot, you can also activate the cleanup in background. The following option
+will activate a default background cleanup in StateTtlConfig if it is supported for the used backend:
+
+<div class="codetabs" markdown="1">
+<div data-lang="java" markdown="1">
+{% highlight java %}
+import org.apache.flink.api.common.state.StateTtlConfig;
+StateTtlConfig ttlConfig = StateTtlConfig
+    .newBuilder(Time.seconds(1))
+    .cleanupInBackground()
+    .build();
+{% endhighlight %}
+</div>
+ <div data-lang="scala" markdown="1">
+{% highlight scala %}
+import org.apache.flink.api.common.state.StateTtlConfig
+val ttlConfig = StateTtlConfig
+    .newBuilder(Time.seconds(1))
+    .cleanupInBackground
+    .build
+{% endhighlight %}
+</div>
+</div>
+
+For more fine-grained control over some special cleanup in background, you can configure it separately as described below.
+Currently, heap state backend relies on incremental cleanup and RocksDB backend uses compaction filter for background cleanup.
+
 ##### 增量数据清理
 
 另外可以选择增量式清理状态数据，在状态访问或/和处理时进行。如果某个状态开启了该清理策略，则会在存储后端保留一个所有状态的惰性全局迭代器。
@@ -363,7 +392,7 @@ import org.apache.flink.api.common.state.StateTtlConfig;
  <div data-lang="scala" markdown="1">
 {% highlight scala %}
 import org.apache.flink.api.common.state.StateTtlConfig
-val ttlConfig = StateTtlCon fig
+val ttlConfig = StateTtlConfig
     .newBuilder(Time.seconds(1))
     .cleanupIncrementally(10, true)
     .build
@@ -372,6 +401,7 @@ val ttlConfig = StateTtlCon fig
 </div>
 
 该策略有两个参数。 第一个是每次清理时检查状态的条目数。如果启用，则始终按每个状态访问触发。第二个参数表示是否在处理每条记录时触发清理。
+If you enable the default background cleanup then this strategy will be activated for heap backend with 5 checked entries and without cleanup per record processing.
 
 **注意:**
 - 如果没有 state 访问，也没有处理数据，则不会清理过期数据。
@@ -395,7 +425,7 @@ import org.apache.flink.api.common.state.StateTtlConfig;
 
 StateTtlConfig ttlConfig = StateTtlConfig
     .newBuilder(Time.seconds(1))
-    .cleanupInRocksdbCompactFilter()
+    .cleanupInRocksdbCompactFilter(1000)
     .build();
 {% endhighlight %}
 </div>
@@ -406,15 +436,19 @@ import org.apache.flink.api.common.state.StateTtlConfig
 
 val ttlConfig = StateTtlConfig
     .newBuilder(Time.seconds(1))
-    .cleanupInRocksdbCompactFilter
+    .cleanupInRocksdbCompactFilter(1000)
     .build
 {% endhighlight %}
 </div>
 </div>
 
-在 Flink 每处理固定数量（默认 1000）的状态后，RocksDB 压缩过滤器会使用当前时间戳进行是否过期的判断。可以通过
-`StateTtlConfig.newBuilder(...).cleanupInRocksdbCompactFilter(long queryTimeAfterNumEntries)` 方法进行定制。
-频繁的更新时间戳可以加快过期状态的速度，但是会降低压缩的效率，因为压缩会有 JNI 调用。
+RocksDB compaction filter will query current timestamp, used to check expiration, from Flink every time
+after processing certain number of state entries.
+You can change it and pass a custom value to
+`StateTtlConfig.newBuilder(...).cleanupInRocksdbCompactFilter(long queryTimeAfterNumEntries)` method.
+Updating the timestamp more often can improve cleanup speed
+but it decreases compaction performance because it uses JNI call from native code.
+If you enable the default background cleanup then this strategy will be activated for RocksDB backend and the current timestamp will be queried each time 1000 entries have been processed.
 
 你还可以通过配置开启 RocksDB 过滤器的 debug 日志：
 `log4j.logger.org.rocksdb.FlinkCompactionFilter=DEBUG`

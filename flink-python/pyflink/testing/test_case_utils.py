@@ -25,14 +25,15 @@ import unittest
 from abc import abstractmethod
 
 from py4j.java_gateway import JavaObject
-from pyflink.table.table_source import CsvTableSource
+from py4j.protocol import Py4JJavaError
 
+from pyflink.table.sources import CsvTableSource
+from pyflink.dataset import ExecutionEnvironment
+from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.find_flink_home import _find_flink_home
-from pyflink.table import TableEnvironment, TableConfig
+from pyflink.table import BatchTableEnvironment, StreamTableEnvironment, EnvironmentSettings
 from pyflink.java_gateway import get_gateway
 
-if sys.version_info[0] >= 3:
-    xrange = range
 
 if os.getenv("VERBOSE"):
     log_level = logging.DEBUG
@@ -40,6 +41,23 @@ else:
     log_level = logging.INFO
 logging.basicConfig(stream=sys.stdout, level=log_level,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+
+def get_private_field(java_obj, field_name):
+    try:
+        field = java_obj.getClass().getDeclaredField(field_name)
+        field.setAccessible(True)
+        return field.get(java_obj)
+    except Py4JJavaError:
+        cls = java_obj.getClass()
+        while cls.getSuperclass() is not None:
+            cls = cls.getSuperclass()
+            try:
+                field = cls.getDeclaredField(field_name)
+                field.setAccessible(True)
+                return field.get(java_obj)
+            except Py4JJavaError:
+                pass
 
 
 class PyFlinkTestCase(unittest.TestCase):
@@ -74,7 +92,7 @@ class PyFlinkTestCase(unittest.TestCase):
     @classmethod
     def to_py_list(cls, actual):
         py_list = []
-        for i in xrange(0, actual.length()):
+        for i in range(0, actual.length()):
             py_list.append(actual.apply(i))
         return py_list
 
@@ -96,24 +114,26 @@ class PyFlinkTestCase(unittest.TestCase):
 
 class PyFlinkStreamTableTestCase(PyFlinkTestCase):
     """
-    Base class for stream unit tests.
+    Base class for stream tests.
     """
 
     def setUp(self):
         super(PyFlinkStreamTableTestCase, self).setUp()
-        self.t_config = TableConfig.Builder().as_streaming_execution().set_parallelism(1).build()
-        self.t_env = TableEnvironment.create(self.t_config)
+        self.env = StreamExecutionEnvironment.get_execution_environment()
+        self.env.set_parallelism(2)
+        self.t_env = StreamTableEnvironment.create(self.env)
 
 
 class PyFlinkBatchTableTestCase(PyFlinkTestCase):
     """
-    Base class for batch unit tests.
+    Base class for batch tests.
     """
 
     def setUp(self):
         super(PyFlinkBatchTableTestCase, self).setUp()
-        self.t_config = TableConfig.Builder().as_batch_execution().set_parallelism(1).build()
-        self.t_env = TableEnvironment.create(self.t_config)
+        self.env = ExecutionEnvironment.get_execution_environment()
+        self.env.set_parallelism(2)
+        self.t_env = BatchTableEnvironment.create(self.env)
 
     def collect(self, table):
         j_table = table._j_table
@@ -122,6 +142,33 @@ class PyFlinkBatchTableTestCase(PyFlinkTestCase):
             .toDataSet(j_table, gateway.jvm.Class.forName("org.apache.flink.types.Row")).collect()
         string_result = [java_row.toString() for java_row in row_result]
         return string_result
+
+
+class PyFlinkBlinkStreamTableTestCase(PyFlinkTestCase):
+    """
+    Base class for stream tests of blink planner.
+    """
+
+    def setUp(self):
+        super(PyFlinkBlinkStreamTableTestCase, self).setUp()
+        self.env = StreamExecutionEnvironment.get_execution_environment()
+        self.env.set_parallelism(2)
+        self.t_env = StreamTableEnvironment.create(
+            self.env, environment_settings=EnvironmentSettings.new_instance()
+                .in_streaming_mode().use_blink_planner().build())
+
+
+class PyFlinkBlinkBatchTableTestCase(PyFlinkTestCase):
+    """
+    Base class for batch tests of blink planner.
+    """
+
+    def setUp(self):
+        super(PyFlinkBlinkBatchTableTestCase, self).setUp()
+        self.t_env = BatchTableEnvironment.create(
+            environment_settings=EnvironmentSettings.new_instance()
+            .in_batch_mode().use_blink_planner().build())
+        self.t_env._j_tenv.getPlanner().getExecEnv().setParallelism(2)
 
 
 class PythonAPICompletenessTestCase(object):
@@ -144,16 +191,19 @@ class PythonAPICompletenessTestCase(object):
     def get_java_class_methods(java_class):
         gateway = get_gateway()
         s = set()
-        method_arr = gateway.jvm.Class.forName(java_class).getDeclaredMethods()
+        method_arr = gateway.jvm.Class.forName(java_class).getMethods()
         for i in range(0, len(method_arr)):
             s.add(method_arr[i].getName())
         return s
 
     @classmethod
     def check_methods(cls):
+        java_primary_methods = {'getClass', 'notifyAll', 'equals', 'hashCode', 'toString',
+                                'notify', 'wait'}
         java_methods = PythonAPICompletenessTestCase.get_java_class_methods(cls.java_class())
         python_methods = cls.get_python_class_methods(cls.python_class())
-        missing_methods = java_methods - python_methods - cls.excluded_methods()
+        missing_methods = java_methods - python_methods - cls.excluded_methods() \
+            - java_primary_methods
         if len(missing_methods) > 0:
             raise Exception('Methods: %s in Java class %s have not been added in Python class %s.'
                             % (missing_methods, cls.java_class(), cls.python_class()))
@@ -193,7 +243,7 @@ class PythonAPICompletenessTestCase(object):
         to the lists you should give a good reason in a comment.
         :return:
         """
-        return {}
+        return {"equals", "hashCode", "toString"}
 
     def test_completeness(self):
         self.check_methods()

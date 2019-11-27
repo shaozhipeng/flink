@@ -27,17 +27,19 @@ import org.apache.flink.core.memory.MemoryType;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.broadcast.BroadcastVariableManager;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
-import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.io.disk.iomanager.IOManager;
 import org.apache.flink.runtime.io.disk.iomanager.IOManagerAsync;
-import org.apache.flink.runtime.io.network.NetworkEnvironment;
 import org.apache.flink.runtime.io.network.TaskEventDispatcher;
 import org.apache.flink.runtime.memory.MemoryManager;
+import org.apache.flink.runtime.shuffle.ShuffleEnvironment;
+import org.apache.flink.runtime.shuffle.ShuffleEnvironmentContext;
+import org.apache.flink.runtime.shuffle.ShuffleServiceLoader;
 import org.apache.flink.runtime.state.TaskExecutorLocalStateStoresManager;
+import org.apache.flink.runtime.taskexecutor.slot.TaskSlot;
 import org.apache.flink.runtime.taskexecutor.slot.TaskSlotTable;
 import org.apache.flink.runtime.taskexecutor.slot.TimerService;
-import org.apache.flink.runtime.taskmanager.NetworkEnvironmentConfiguration;
+import org.apache.flink.runtime.taskmanager.NettyShuffleEnvironmentConfiguration;
 import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
 import org.apache.flink.runtime.util.ConfigurationParserUtils;
 import org.apache.flink.util.ExceptionUtils;
@@ -49,16 +51,19 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.apache.flink.configuration.MemorySize.MemoryUnit.MEGA_BYTES;
 
 /**
  * Container for {@link TaskExecutor} services such as the {@link MemoryManager}, {@link IOManager},
- * {@link NetworkEnvironment}. All services are exclusive to a single {@link TaskExecutor}.
+ * {@link ShuffleEnvironment}. All services are exclusive to a single {@link TaskExecutor}.
  * Consequently, the respective {@link TaskExecutor} is responsible for closing them.
  */
 public class TaskManagerServices {
@@ -69,9 +74,9 @@ public class TaskManagerServices {
 
 	/** TaskManager services. */
 	private final TaskManagerLocation taskManagerLocation;
-	private final MemoryManager memoryManager;
+	private final long managedMemorySize;
 	private final IOManager ioManager;
-	private final NetworkEnvironment networkEnvironment;
+	private final ShuffleEnvironment<?, ?> shuffleEnvironment;
 	private final KvStateService kvStateService;
 	private final BroadcastVariableManager broadcastVariableManager;
 	private final TaskSlotTable taskSlotTable;
@@ -82,9 +87,9 @@ public class TaskManagerServices {
 
 	TaskManagerServices(
 		TaskManagerLocation taskManagerLocation,
-		MemoryManager memoryManager,
+		long managedMemorySize,
 		IOManager ioManager,
-		NetworkEnvironment networkEnvironment,
+		ShuffleEnvironment<?, ?> shuffleEnvironment,
 		KvStateService kvStateService,
 		BroadcastVariableManager broadcastVariableManager,
 		TaskSlotTable taskSlotTable,
@@ -94,9 +99,9 @@ public class TaskManagerServices {
 		TaskEventDispatcher taskEventDispatcher) {
 
 		this.taskManagerLocation = Preconditions.checkNotNull(taskManagerLocation);
-		this.memoryManager = Preconditions.checkNotNull(memoryManager);
+		this.managedMemorySize = managedMemorySize;
 		this.ioManager = Preconditions.checkNotNull(ioManager);
-		this.networkEnvironment = Preconditions.checkNotNull(networkEnvironment);
+		this.shuffleEnvironment = Preconditions.checkNotNull(shuffleEnvironment);
 		this.kvStateService = Preconditions.checkNotNull(kvStateService);
 		this.broadcastVariableManager = Preconditions.checkNotNull(broadcastVariableManager);
 		this.taskSlotTable = Preconditions.checkNotNull(taskSlotTable);
@@ -110,16 +115,16 @@ public class TaskManagerServices {
 	//  Getter/Setter
 	// --------------------------------------------------------------------------------------------
 
-	public MemoryManager getMemoryManager() {
-		return memoryManager;
+	long getManagedMemorySize() {
+		return managedMemorySize;
 	}
 
 	public IOManager getIOManager() {
 		return ioManager;
 	}
 
-	public NetworkEnvironment getNetworkEnvironment() {
-		return networkEnvironment;
+	public ShuffleEnvironment<?, ?> getShuffleEnvironment() {
+		return shuffleEnvironment;
 	}
 
 	public KvStateService getKvStateService() {
@@ -172,19 +177,13 @@ public class TaskManagerServices {
 		}
 
 		try {
-			memoryManager.shutdown();
+			ioManager.close();
 		} catch (Exception e) {
 			exception = ExceptionUtils.firstOrSuppressed(e, exception);
 		}
 
 		try {
-			ioManager.shutdown();
-		} catch (Exception e) {
-			exception = ExceptionUtils.firstOrSuppressed(e, exception);
-		}
-
-		try {
-			networkEnvironment.shutdown();
+			shuffleEnvironment.close();
 		} catch (Exception e) {
 			exception = ExceptionUtils.firstOrSuppressed(e, exception);
 		}
@@ -223,20 +222,14 @@ public class TaskManagerServices {
 	 *
 	 * @param taskManagerServicesConfiguration task manager configuration
 	 * @param taskManagerMetricGroup metric group of the task manager
-	 * @param resourceID resource ID of the task manager
 	 * @param taskIOExecutor executor for async IO operations
-	 * @param freeHeapMemoryWithDefrag an estimate of the size of the free heap memory
-	 * @param maxJvmHeapMemory the maximum JVM heap size
 	 * @return task manager components
 	 * @throws Exception
 	 */
 	public static TaskManagerServices fromConfiguration(
 			TaskManagerServicesConfiguration taskManagerServicesConfiguration,
 			MetricGroup taskManagerMetricGroup,
-			ResourceID resourceID,
-			Executor taskIOExecutor,
-			long freeHeapMemoryWithDefrag,
-			long maxJvmHeapMemory) throws Exception {
+			Executor taskIOExecutor) throws Exception {
 
 		// pre-start checks
 		checkTempDirs(taskManagerServicesConfiguration.getTmpDirPaths());
@@ -246,34 +239,28 @@ public class TaskManagerServices {
 		// start the I/O manager, it will create some temp directories.
 		final IOManager ioManager = new IOManagerAsync(taskManagerServicesConfiguration.getTmpDirPaths());
 
-		final NetworkEnvironment network = new NetworkEnvironment(
-			taskManagerServicesConfiguration.getNetworkConfig(), taskEventDispatcher, taskManagerMetricGroup, ioManager);
-		network.start();
+		final ShuffleEnvironment<?, ?> shuffleEnvironment = createShuffleEnvironment(
+			taskManagerServicesConfiguration,
+			taskEventDispatcher,
+			taskManagerMetricGroup);
+		final int dataPort = shuffleEnvironment.start();
 
 		final KvStateService kvStateService = KvStateService.fromConfiguration(taskManagerServicesConfiguration);
 		kvStateService.start();
 
 		final TaskManagerLocation taskManagerLocation = new TaskManagerLocation(
-			resourceID,
+			taskManagerServicesConfiguration.getResourceID(),
 			taskManagerServicesConfiguration.getTaskManagerAddress(),
-			network.getConnectionManager().getDataPort());
-
-		// this call has to happen strictly after the network stack has been initialized
-		final MemoryManager memoryManager = createMemoryManager(taskManagerServicesConfiguration, freeHeapMemoryWithDefrag, maxJvmHeapMemory);
+			dataPort);
 
 		final BroadcastVariableManager broadcastVariableManager = new BroadcastVariableManager();
 
-		final List<ResourceProfile> resourceProfiles = new ArrayList<>(taskManagerServicesConfiguration.getNumberOfSlots());
-
-		for (int i = 0; i < taskManagerServicesConfiguration.getNumberOfSlots(); i++) {
-			resourceProfiles.add(ResourceProfile.ANY);
-		}
-
-		final TimerService<AllocationID> timerService = new TimerService<>(
-			new ScheduledThreadPoolExecutor(1),
-			taskManagerServicesConfiguration.getTimerServiceShutdownTimeout());
-
-		final TaskSlotTable taskSlotTable = new TaskSlotTable(resourceProfiles, timerService);
+		Map<MemoryType, Long> memorySizeByType = calculateMemorySizeByType(taskManagerServicesConfiguration);
+		final TaskSlotTable taskSlotTable = createTaskSlotTable(
+			taskManagerServicesConfiguration.getNumberOfSlots(),
+			memorySizeByType,
+			taskManagerServicesConfiguration.getTimerServiceShutdownTimeout(),
+			taskManagerServicesConfiguration.getPageSize());
 
 		final JobManagerTable jobManagerTable = new JobManagerTable();
 
@@ -294,9 +281,9 @@ public class TaskManagerServices {
 
 		return new TaskManagerServices(
 			taskManagerLocation,
-			memoryManager,
+			memorySizeByType.values().stream().mapToLong(s -> s).sum(),
 			ioManager,
-			network,
+			shuffleEnvironment,
 			kvStateService,
 			broadcastVariableManager,
 			taskSlotTable,
@@ -306,21 +293,56 @@ public class TaskManagerServices {
 			taskEventDispatcher);
 	}
 
+	private static TaskSlotTable createTaskSlotTable(
+			final int numberOfSlots,
+			final Map<MemoryType, Long> memorySizeByType,
+			final long timerServiceShutdownTimeout,
+			final int pageSize) {
+		final List<ResourceProfile> resourceProfiles =
+			Collections.nCopies(numberOfSlots, computeSlotResourceProfile(numberOfSlots, memorySizeByType));
+		final TimerService<AllocationID> timerService = new TimerService<>(
+			new ScheduledThreadPoolExecutor(1),
+			timerServiceShutdownTimeout);
+		return new TaskSlotTable(createTaskSlotsFromResources(resourceProfiles, pageSize), timerService);
+	}
+
+	private static List<TaskSlot> createTaskSlotsFromResources(
+			List<ResourceProfile> resourceProfiles,
+			int memoryPageSize) {
+		return IntStream
+			.range(0, resourceProfiles.size())
+			.mapToObj(index -> new TaskSlot(index, resourceProfiles.get(index), memoryPageSize))
+			.collect(Collectors.toList());
+	}
+
+	private static ShuffleEnvironment<?, ?> createShuffleEnvironment(
+			TaskManagerServicesConfiguration taskManagerServicesConfiguration,
+			TaskEventDispatcher taskEventDispatcher,
+			MetricGroup taskManagerMetricGroup) throws FlinkException {
+
+		final ShuffleEnvironmentContext shuffleEnvironmentContext = new ShuffleEnvironmentContext(
+			taskManagerServicesConfiguration.getConfiguration(),
+			taskManagerServicesConfiguration.getResourceID(),
+			taskManagerServicesConfiguration.getMaxJvmHeapMemory(),
+			taskManagerServicesConfiguration.isLocalCommunicationOnly(),
+			taskManagerServicesConfiguration.getTaskManagerAddress(),
+			taskEventDispatcher,
+			taskManagerMetricGroup);
+
+		return ShuffleServiceLoader
+			.loadShuffleServiceFactory(taskManagerServicesConfiguration.getConfiguration())
+			.createShuffleEnvironment(shuffleEnvironmentContext);
+	}
+
 	/**
-	 * Creates a {@link MemoryManager} from the given {@link TaskManagerServicesConfiguration}.
+	 * Computes memory size for each {@link MemoryType} from the given {@link TaskManagerServicesConfiguration}.
 	 *
 	 * @param taskManagerServicesConfiguration to create the memory manager from
-	 * @param freeHeapMemoryWithDefrag an estimate of the size of the free heap memory
-	 * @param maxJvmHeapMemory the maximum JVM heap size
-	 * @return Memory manager
-	 * @throws Exception
+	 * @return map of {@link MemoryType} (heap/off-heap) to its size
 	 */
-	private static MemoryManager createMemoryManager(
-			TaskManagerServicesConfiguration taskManagerServicesConfiguration,
-			long freeHeapMemoryWithDefrag,
-			long maxJvmHeapMemory) throws Exception {
+	private static Map<MemoryType, Long> calculateMemorySizeByType(
+			TaskManagerServicesConfiguration taskManagerServicesConfiguration) {
 		// computing the amount of memory to use depends on how much memory is available
-		// it strictly needs to happen AFTER the network stack has been initialized
 
 		// check if a value has been configured
 		long configuredMemory = taskManagerServicesConfiguration.getConfiguredMemory();
@@ -329,71 +351,33 @@ public class TaskManagerServices {
 
 		final long memorySize;
 
-		boolean preAllocateMemory = taskManagerServicesConfiguration.isPreAllocateMemory();
-
 		if (configuredMemory > 0) {
-			if (preAllocateMemory) {
-				LOG.info("Using {} MB for managed memory." , configuredMemory);
-			} else {
-				LOG.info("Limiting managed memory to {} MB, memory will be allocated lazily." , configuredMemory);
-			}
+			LOG.info("Limiting managed memory to {} MB." , configuredMemory);
 			memorySize = configuredMemory << 20; // megabytes to bytes
 		} else {
 			// similar to #calculateNetworkBufferMemory(TaskManagerServicesConfiguration tmConfig)
 			float memoryFraction = taskManagerServicesConfiguration.getMemoryFraction();
 
 			if (memType == MemoryType.HEAP) {
+				long freeHeapMemoryWithDefrag = taskManagerServicesConfiguration.getFreeHeapMemoryWithDefrag();
 				// network buffers allocated off-heap -> use memoryFraction of the available heap:
 				long relativeMemSize = (long) (freeHeapMemoryWithDefrag * memoryFraction);
-				if (preAllocateMemory) {
-					LOG.info("Using {} of the currently free heap space for managed heap memory ({} MB)." ,
-						memoryFraction , relativeMemSize >> 20);
-				} else {
-					LOG.info("Limiting managed memory to {} of the currently free heap space ({} MB), " +
-						"memory will be allocated lazily." , memoryFraction , relativeMemSize >> 20);
-				}
+				LOG.info("Limiting managed memory to {} of the currently free heap space ({} MB)." , memoryFraction , relativeMemSize >> 20);
 				memorySize = relativeMemSize;
 			} else if (memType == MemoryType.OFF_HEAP) {
+				long maxJvmHeapMemory = taskManagerServicesConfiguration.getMaxJvmHeapMemory();
 				// The maximum heap memory has been adjusted according to the fraction (see
 				// calculateHeapSizeMB(long totalJavaMemorySizeMB, Configuration config)), i.e.
 				// maxJvmHeap = jvmTotalNoNet - jvmTotalNoNet * memoryFraction = jvmTotalNoNet * (1 - memoryFraction)
 				// directMemorySize = jvmTotalNoNet * memoryFraction
 				long directMemorySize = (long) (maxJvmHeapMemory / (1.0 - memoryFraction) * memoryFraction);
-				if (preAllocateMemory) {
-					LOG.info("Using {} of the maximum memory size for managed off-heap memory ({} MB)." ,
-						memoryFraction, directMemorySize >> 20);
-				} else {
-					LOG.info("Limiting managed memory to {} of the maximum memory size ({} MB)," +
-						" memory will be allocated lazily.", memoryFraction, directMemorySize >> 20);
-				}
+				LOG.info("Limiting managed memory to {} of the maximum memory size ({} MB).", memoryFraction, directMemorySize >> 20);
 				memorySize = directMemorySize;
 			} else {
 				throw new RuntimeException("No supported memory type detected.");
 			}
 		}
-
-		// now start the memory manager
-		final MemoryManager memoryManager;
-		try {
-			memoryManager = new MemoryManager(
-				memorySize,
-				taskManagerServicesConfiguration.getNumberOfSlots(),
-				taskManagerServicesConfiguration.getNetworkConfig().networkBufferSize(),
-				memType,
-				preAllocateMemory);
-		} catch (OutOfMemoryError e) {
-			if (memType == MemoryType.HEAP) {
-				throw new Exception("OutOfMemory error (" + e.getMessage() +
-					") while allocating the TaskManager heap memory (" + memorySize + " bytes).", e);
-			} else if (memType == MemoryType.OFF_HEAP) {
-				throw new Exception("OutOfMemory error (" + e.getMessage() +
-					") while allocating the TaskManager off-heap memory (" + memorySize +
-					" bytes).Try increasing the maximum direct memory (-XX:MaxDirectMemorySize)", e);
-			} else {
-				throw e;
-			}
-		}
-		return memoryManager;
+		return Collections.singletonMap(memType, memorySize);
 	}
 
 	/**
@@ -410,50 +394,68 @@ public class TaskManagerServices {
 	public static long calculateHeapSizeMB(long totalJavaMemorySizeMB, Configuration config) {
 		Preconditions.checkArgument(totalJavaMemorySizeMB > 0);
 
-		// subtract the Java memory used for network buffers (always off-heap)
-		final long networkBufMB = NetworkEnvironmentConfiguration.calculateNetworkBufferMemory(
-			totalJavaMemorySizeMB << 20, // megabytes to bytes
-			config) >> 20; // bytes to megabytes
-		final long remainingJavaMemorySizeMB = totalJavaMemorySizeMB - networkBufMB;
+		// all values below here are in bytes
 
-		// split the available Java memory between heap and off-heap
+		final long totalProcessMemory = megabytesToBytes(totalJavaMemorySizeMB);
+		final long networkReservedMemory = getReservedNetworkMemory(config, totalProcessMemory);
+		final long heapAndManagedMemory = totalProcessMemory - networkReservedMemory;
 
-		final boolean useOffHeap = config.getBoolean(TaskManagerOptions.MEMORY_OFF_HEAP);
+		if (config.getBoolean(TaskManagerOptions.MEMORY_OFF_HEAP)) {
+			final long managedMemorySize = getManagedMemoryFromHeapAndManaged(config, heapAndManagedMemory);
 
-		final long heapSizeMB;
-		if (useOffHeap) {
-
-			long offHeapSize;
-			String managedMemorySizeDefaultVal = TaskManagerOptions.MANAGED_MEMORY_SIZE.defaultValue();
-			if (!config.getString(TaskManagerOptions.MANAGED_MEMORY_SIZE).equals(managedMemorySizeDefaultVal)) {
-				try {
-					offHeapSize = MemorySize.parse(config.getString(TaskManagerOptions.MANAGED_MEMORY_SIZE), MEGA_BYTES).getMebiBytes();
-				} catch (IllegalArgumentException e) {
-					throw new IllegalConfigurationException(
-						"Could not read " + TaskManagerOptions.MANAGED_MEMORY_SIZE.key(), e);
-				}
-			} else {
-				offHeapSize = Long.valueOf(managedMemorySizeDefaultVal);
-			}
-
-			if (offHeapSize <= 0) {
-				// calculate off-heap section via fraction
-				double fraction = config.getFloat(TaskManagerOptions.MANAGED_MEMORY_FRACTION);
-				offHeapSize = (long) (fraction * remainingJavaMemorySizeMB);
-			}
-
-			ConfigurationParserUtils.checkConfigParameter(offHeapSize < remainingJavaMemorySizeMB, offHeapSize,
-				TaskManagerOptions.MANAGED_MEMORY_SIZE.key(),
-					"Managed memory size too large for " + networkBufMB +
+			ConfigurationParserUtils.checkConfigParameter(managedMemorySize < heapAndManagedMemory, managedMemorySize,
+				TaskManagerOptions.LEGACY_MANAGED_MEMORY_SIZE.key(),
+					"Managed memory size too large for " + (networkReservedMemory >> 20) +
 						" MB network buffer memory and a total of " + totalJavaMemorySizeMB +
 						" MB JVM memory");
 
-			heapSizeMB = remainingJavaMemorySizeMB - offHeapSize;
-		} else {
-			heapSizeMB = remainingJavaMemorySizeMB;
+			return bytesToMegabytes(heapAndManagedMemory - managedMemorySize);
 		}
+		else {
+			return bytesToMegabytes(heapAndManagedMemory);
+		}
+	}
 
-		return heapSizeMB;
+	/**
+	 * Gets the size of managed memory from the JVM process size, which at that point includes
+	 * network buffer memory, managed memory, and non-flink-managed heap memory.
+	 * All values are in bytes.
+	 */
+	public static long getManagedMemoryFromProcessMemory(Configuration config, long totalProcessMemory) {
+		final long heapAndManagedMemory = totalProcessMemory - getReservedNetworkMemory(config, totalProcessMemory);
+		return getManagedMemoryFromHeapAndManaged(config, heapAndManagedMemory);
+	}
+
+	/**
+	 * Gets the size of managed memory from the heap size after subtracting network buffer memory.
+	 * All values are in bytes.
+	 */
+	public static long getManagedMemoryFromHeapAndManaged(Configuration config, long heapAndManagedMemory) {
+		if (config.contains(TaskManagerOptions.LEGACY_MANAGED_MEMORY_SIZE)) {
+			// take the configured absolute value
+			final String sizeValue = config.getString(TaskManagerOptions.LEGACY_MANAGED_MEMORY_SIZE);
+			try {
+				return MemorySize.parse(sizeValue, MEGA_BYTES).getBytes();
+			}
+			catch (IllegalArgumentException e) {
+				throw new IllegalConfigurationException(
+					"Could not read " + TaskManagerOptions.LEGACY_MANAGED_MEMORY_SIZE.key(), e);
+			}
+		}
+		else {
+			// calculate managed memory size via fraction
+			final float fraction = config.getFloat(TaskManagerOptions.LEGACY_MANAGED_MEMORY_FRACTION);
+			return (long) (fraction * heapAndManagedMemory);
+		}
+	}
+
+	/**
+	 * Gets the amount of memory reserved for networking, given the total JVM memory.
+	 * All values are in bytes.
+	 */
+	public static long getReservedNetworkMemory(Configuration config, long totalProcessMemory) {
+		// subtract the Java memory used for network buffers (always off-heap)
+		return NettyShuffleEnvironmentConfiguration.calculateNetworkBufferMemory(totalProcessMemory, config);
 	}
 
 	/**
@@ -492,5 +494,29 @@ public class TaskManagerServices {
 				throw new IllegalArgumentException("Temporary file directory #$id is null.");
 			}
 		}
+	}
+
+	public static ResourceProfile computeSlotResourceProfile(int numOfSlots, long managedMemorySize) {
+		// TODO: before operators separate on-heap/off-heap managed memory, we use on-heap managed memory to denote total managed memory
+		return computeSlotResourceProfile(numOfSlots, Collections.singletonMap(MemoryType.HEAP, managedMemorySize));
+	}
+
+	private static ResourceProfile computeSlotResourceProfile(int numOfSlots, Map<MemoryType, Long> memorySizeByType) {
+		return ResourceProfile.newBuilder()
+			.setCpuCores(Double.MAX_VALUE)
+			.setTaskHeapMemory(MemorySize.MAX_VALUE)
+			.setTaskOffHeapMemory(MemorySize.MAX_VALUE)
+			.setOnHeapManagedMemory(new MemorySize(memorySizeByType.getOrDefault(MemoryType.HEAP, 0L) / numOfSlots))
+			.setOffHeapManagedMemory(new MemorySize(memorySizeByType.getOrDefault(MemoryType.OFF_HEAP, 0L) / numOfSlots))
+			.setShuffleMemory(MemorySize.MAX_VALUE)
+			.build();
+	}
+
+	private static long bytesToMegabytes(long bytes) {
+		return bytes >> 20;
+	}
+
+	private static long megabytesToBytes(long megabytes) {
+		return megabytes << 20;
 	}
 }

@@ -28,9 +28,8 @@ import org.apache.calcite.sql.`type`.SqlTypeName._
 import org.apache.calcite.sql.fun._
 import org.apache.calcite.sql.{SqlAggFunction, SqlKind}
 import org.apache.flink.api.common.functions.{MapFunction, RichGroupReduceFunction, AggregateFunction => DataStreamAggFunction, _}
-import org.apache.flink.api.common.typeinfo.{BasicTypeInfo, TypeInformation}
+import org.apache.flink.api.common.typeinfo.{BasicTypeInfo, TypeInformation, Types}
 import org.apache.flink.api.java.typeutils.RowTypeInfo
-import org.apache.flink.api.scala.typeutils.Types
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction
 import org.apache.flink.streaming.api.functions.windowing.{AllWindowFunction, WindowFunction}
 import org.apache.flink.streaming.api.windowing.windows.{Window => DataStreamWindow}
@@ -38,17 +37,17 @@ import org.apache.flink.table.api.dataview.DataViewSpec
 import org.apache.flink.table.api.{StreamQueryConfig, TableConfig, TableException}
 import org.apache.flink.table.calcite.FlinkRelBuilder.NamedWindowProperty
 import org.apache.flink.table.calcite.FlinkTypeFactory
-import org.apache.flink.table.codegen.AggregationCodeGenerator
+import org.apache.flink.table.codegen.{AggregationCodeGenerator, GeneratedTableAggregationsFunction}
 import org.apache.flink.table.expressions.PlannerExpressionUtils.isTimeIntervalLiteral
 import org.apache.flink.table.expressions._
 import org.apache.flink.table.functions.aggfunctions._
 import org.apache.flink.table.functions.utils.AggSqlFunction
 import org.apache.flink.table.functions.utils.UserDefinedFunctionUtils._
-import org.apache.flink.table.functions.{AggregateFunction, TableAggregateFunction, UserDefinedAggregateFunction}
+import org.apache.flink.table.functions.{AggregateFunction, TableAggregateFunction, UserDefinedAggregateFunction, UserFunctionsTypeHelper}
 import org.apache.flink.table.plan.logical._
 import org.apache.flink.table.runtime.types.{CRow, CRowTypeInfo}
+import org.apache.flink.table.typeutils.TimeIntervalTypeInfo
 import org.apache.flink.table.typeutils.TypeCheckUtils._
-import org.apache.flink.table.typeutils.{RowIntervalTypeInfo, TimeIntervalTypeInfo}
 import org.apache.flink.types.Row
 
 import scala.collection.JavaConversions._
@@ -226,19 +225,21 @@ object AggregateUtil {
       accConfig = Some(aggregateMetadata.getAggregatesAccumulatorSpecs)
     )
 
-    val genAggregations = generator
-      .genAggregationsOrTableAggregations(outputType, groupings.length, namedAggregates)
     val aggregationStateType: RowTypeInfo = new RowTypeInfo(aggregateMetadata
       .getAggregatesAccumulatorTypes: _*)
 
     if (isTableAggregate) {
+      val genAggregations = generator
+        .genAggregationsOrTableAggregations(outputType, groupings.length, namedAggregates, true)
       new GroupTableAggProcessFunction[K](
-        genAggregations,
+        genAggregations.asInstanceOf[GeneratedTableAggregationsFunction],
         aggregationStateType,
         generateRetraction,
         groupings.length,
         queryConfig)
     } else {
+      val genAggregations = generator
+        .genAggregationsOrTableAggregations(outputType, groupings.length, namedAggregates, false)
       new GroupAggProcessFunction[K](
         genAggregations,
         aggregationStateType,
@@ -278,7 +279,6 @@ object AggregateUtil {
       inputFieldTypeInfo: Seq[TypeInformation[_]],
       precedingOffset: Long,
       queryConfig: StreamQueryConfig,
-      tableConfig: TableConfig,
       isRowsClause: Boolean,
       rowTimeIdx: Option[Int])
     : KeyedProcessFunction[K, CRow, CRow] = {
@@ -289,7 +289,7 @@ object AggregateUtil {
         aggregateInputType,
         inputFieldTypeInfo.length,
         needRetract,
-        tableConfig,
+        config,
         isStateBackedDataViews = true)
 
     val inputRowType = CRowTypeInfo(inputTypeInfo)
@@ -1213,7 +1213,8 @@ object AggregateUtil {
     val genAggregations = generator.genAggregationsOrTableAggregations(
       outputType,
       groupingKeys.length,
-      namedAggregates)
+      namedAggregates,
+      false)
     val aggFunction = new AggregateAggFunction(genAggregations, isTableAggregate)
 
     (aggFunction, accumulatorRowType)
@@ -1419,7 +1420,7 @@ object AggregateUtil {
     val (accumulatorType, accSpecs) = {
       val accType = aggregateFunction match {
         case udagg: AggSqlFunction => udagg.accType
-        case _ => getAccumulatorTypeOfAggregateFunction(aggregate)
+        case _ => UserFunctionsTypeHelper.getAccumulatorTypeOfAggregateFunction(aggregate)
       }
 
       removeStateViewFieldsFromAccTypeInfo(
@@ -1842,7 +1843,7 @@ object AggregateUtil {
 
   private[flink] def asLong(expr: PlannerExpression): Long = expr match {
     case Literal(value: Long, TimeIntervalTypeInfo.INTERVAL_MILLIS) => value
-    case Literal(value: Long, RowIntervalTypeInfo.INTERVAL_ROWS) => value
+    case Literal(value: Long, BasicTypeInfo.LONG_TYPE_INFO) => value
     case _ => throw new IllegalArgumentException()
   }
 

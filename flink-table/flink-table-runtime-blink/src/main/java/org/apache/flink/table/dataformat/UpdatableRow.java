@@ -107,6 +107,11 @@ public final class UpdatableRow implements BaseRow {
 	}
 
 	@Override
+	public SqlTimestamp getTimestamp(int ordinal, int precision) {
+		return updated[ordinal] ? (SqlTimestamp) fields[ordinal] : row.getTimestamp(ordinal, precision);
+	}
+
+	@Override
 	public <T> BinaryGeneric<T> getGeneric(int ordinal) {
 		return updated[ordinal] ? (BinaryGeneric<T>) fields[ordinal] : row.getGeneric(ordinal);
 	}
@@ -117,12 +122,12 @@ public final class UpdatableRow implements BaseRow {
 	}
 
 	@Override
-	public BinaryArray getArray(int ordinal) {
-		return updated[ordinal] ? (BinaryArray) fields[ordinal] : row.getArray(ordinal);
+	public BaseArray getArray(int ordinal) {
+		return updated[ordinal] ? (BaseArray) fields[ordinal] : row.getArray(ordinal);
 	}
 
 	@Override
-	public BinaryMap getMap(int ordinal) {
+	public BaseMap getMap(int ordinal) {
 		return updated[ordinal] ? (BinaryMap) fields[ordinal] : row.getMap(ordinal);
 	}
 
@@ -168,6 +173,11 @@ public final class UpdatableRow implements BaseRow {
 
 	@Override
 	public void setDecimal(int ordinal, Decimal value, int precision) {
+		setField(ordinal, value);
+	}
+
+	@Override
+	public void setTimestamp(int ordinal, SqlTimestamp value, int precision) {
 		setField(ordinal, value);
 	}
 

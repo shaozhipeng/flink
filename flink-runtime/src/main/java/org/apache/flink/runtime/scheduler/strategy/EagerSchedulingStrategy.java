@@ -20,7 +20,6 @@ package org.apache.flink.runtime.scheduler.strategy;
 
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
-import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.scheduler.DeploymentOption;
 import org.apache.flink.runtime.scheduler.ExecutionVertexDeploymentOption;
 import org.apache.flink.runtime.scheduler.SchedulerOperations;
@@ -41,13 +40,13 @@ public class EagerSchedulingStrategy implements SchedulingStrategy {
 
 	private final SchedulerOperations schedulerOperations;
 
-	private final SchedulingTopology schedulingTopology;
+	private final SchedulingTopology<?, ?> schedulingTopology;
 
 	private final DeploymentOption deploymentOption = new DeploymentOption(false);
 
 	public EagerSchedulingStrategy(
 			SchedulerOperations schedulerOperations,
-			SchedulingTopology schedulingTopology) {
+			SchedulingTopology<?, ?> schedulingTopology) {
 		this.schedulerOperations = checkNotNull(schedulerOperations);
 		this.schedulingTopology = checkNotNull(schedulingTopology);
 	}
@@ -104,8 +103,7 @@ public class EagerSchedulingStrategy implements SchedulingStrategy {
 		@Override
 		public SchedulingStrategy createInstance(
 				SchedulerOperations schedulerOperations,
-				SchedulingTopology schedulingTopology,
-				JobGraph jobGraph) {
+				SchedulingTopology<?, ?> schedulingTopology) {
 			return new EagerSchedulingStrategy(schedulerOperations, schedulingTopology);
 		}
 	}

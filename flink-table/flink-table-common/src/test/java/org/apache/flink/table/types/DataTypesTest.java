@@ -21,7 +21,6 @@ package org.apache.flink.table.types;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.common.typeutils.base.VoidSerializer;
 import org.apache.flink.table.api.DataTypes;
-import org.apache.flink.table.types.logical.AnyType;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BigIntType;
 import org.apache.flink.table.types.logical.BinaryType;
@@ -38,12 +37,13 @@ import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
 import org.apache.flink.table.types.logical.NullType;
+import org.apache.flink.table.types.logical.RawType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.SmallIntType;
 import org.apache.flink.table.types.logical.TimeType;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.TinyIntType;
-import org.apache.flink.table.types.logical.TypeInformationAnyType;
+import org.apache.flink.table.types.logical.TypeInformationRawType;
 import org.apache.flink.table.types.logical.VarBinaryType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.table.types.logical.YearMonthIntervalType;
@@ -63,7 +63,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.flink.table.api.DataTypes.ANY;
 import static org.apache.flink.table.api.DataTypes.ARRAY;
 import static org.apache.flink.table.api.DataTypes.BIGINT;
 import static org.apache.flink.table.api.DataTypes.BINARY;
@@ -82,6 +81,7 @@ import static org.apache.flink.table.api.DataTypes.MINUTE;
 import static org.apache.flink.table.api.DataTypes.MONTH;
 import static org.apache.flink.table.api.DataTypes.MULTISET;
 import static org.apache.flink.table.api.DataTypes.NULL;
+import static org.apache.flink.table.api.DataTypes.RAW;
 import static org.apache.flink.table.api.DataTypes.ROW;
 import static org.apache.flink.table.api.DataTypes.SECOND;
 import static org.apache.flink.table.api.DataTypes.SMALLINT;
@@ -144,14 +144,26 @@ public class DataTypesTest {
 
 				{TIME(3), new TimeType(3), java.time.LocalTime.class},
 
+				{TIME(), new TimeType(0), java.time.LocalTime.class},
+
 				{TIMESTAMP(3), new TimestampType(3), java.time.LocalDateTime.class},
+
+				{TIMESTAMP(), new TimestampType(6), java.time.LocalDateTime.class},
 
 				{TIMESTAMP_WITH_TIME_ZONE(3),
 					new ZonedTimestampType(3),
 					java.time.OffsetDateTime.class},
 
+				{TIMESTAMP_WITH_TIME_ZONE(),
+					new ZonedTimestampType(6),
+					java.time.OffsetDateTime.class},
+
 				{TIMESTAMP_WITH_LOCAL_TIME_ZONE(3),
 					new LocalZonedTimestampType(3),
+					java.time.Instant.class},
+
+				{TIMESTAMP_WITH_LOCAL_TIME_ZONE(),
+					new LocalZonedTimestampType(6),
 					java.time.Instant.class},
 
 				{INTERVAL(MINUTE(), SECOND(3)),
@@ -183,12 +195,12 @@ public class DataTypesTest {
 
 				{NULL(), new NullType(), Object.class},
 
-				{ANY(Types.GENERIC(DataTypesTest.class)),
-					new TypeInformationAnyType<>(Types.GENERIC(DataTypesTest.class)),
+				{RAW(Types.GENERIC(DataTypesTest.class)),
+					new TypeInformationRawType<>(Types.GENERIC(DataTypesTest.class)),
 					DataTypesTest.class},
 
-				{ANY(Void.class, VoidSerializer.INSTANCE),
-					new AnyType<>(Void.class, VoidSerializer.INSTANCE),
+				{RAW(Void.class, VoidSerializer.INSTANCE),
+					new RawType<>(Void.class, VoidSerializer.INSTANCE),
 					Void.class}
 			}
 		);

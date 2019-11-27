@@ -150,7 +150,7 @@ public class LaunchableMesosWorker implements LaunchableTask {
 
 		@Override
 		public int getPorts() {
-			return extractPortKeys(containerSpec.getDynamicConfiguration()).size();
+			return extractPortKeys(containerSpec.getFlinkConfiguration()).size();
 		}
 
 		@Override
@@ -189,6 +189,8 @@ public class LaunchableMesosWorker implements LaunchableTask {
 				"cpus=" + getCPUs() +
 				", memory=" + getMemory() +
 				", gpus=" + getGPUs() +
+				", disk=" + getDisk() +
+				", network=" + getNetworkMbps() +
 				"}";
 		}
 	}
@@ -207,7 +209,7 @@ public class LaunchableMesosWorker implements LaunchableTask {
 		final Configuration dynamicProperties = new Configuration();
 
 		// incorporate the dynamic properties set by the template
-		dynamicProperties.addAll(containerSpec.getDynamicConfiguration());
+		dynamicProperties.addAll(containerSpec.getFlinkConfiguration());
 
 		// build a TaskInfo with assigned resources, environment variables, etc
 		final Protos.TaskInfo.Builder taskInfo = Protos.TaskInfo.newBuilder()
@@ -242,7 +244,7 @@ public class LaunchableMesosWorker implements LaunchableTask {
 		}
 
 		// take needed ports for the TM
-		Set<String> tmPortKeys = extractPortKeys(containerSpec.getDynamicConfiguration());
+		Set<String> tmPortKeys = extractPortKeys(containerSpec.getFlinkConfiguration());
 		List<Protos.Resource> portResources = allocation.takeRanges("ports", tmPortKeys.size(), roles);
 		taskInfo.addAllResources(portResources);
 		Iterator<String> portsToAssign = tmPortKeys.iterator();
@@ -337,6 +339,8 @@ public class LaunchableMesosWorker implements LaunchableTask {
 		containerInfo.addAllVolumes(params.containerVolumes());
 		taskInfo.setContainer(containerInfo);
 
+		LOG.debug("Starting TaskExecutor {} with command: {}", slaveId, taskInfo.getCommand().getValue());
+
 		return taskInfo.build();
 	}
 
@@ -355,7 +359,7 @@ public class LaunchableMesosWorker implements LaunchableTask {
 		if (portKeys != null) {
 			Arrays.stream(portKeys.split(","))
 				.map(String::trim)
-				.peek(key -> LOG.debug("Adding port key {} to mesos request"))
+				.peek(key -> LOG.debug("Adding port key {} to mesos request", key))
 				.forEach(tmPortKeys::add);
 		}
 

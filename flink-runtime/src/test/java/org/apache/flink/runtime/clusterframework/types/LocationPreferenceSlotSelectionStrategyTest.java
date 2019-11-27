@@ -28,11 +28,15 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
+/**
+ * Tests for {@link LocationPreferenceSlotSelectionStrategy}.
+ */
 public class LocationPreferenceSlotSelectionStrategyTest extends SlotSelectionStrategyTestBase {
 
 	public LocationPreferenceSlotSelectionStrategyTest() {
-		super(LocationPreferenceSlotSelectionStrategy.INSTANCE);
+		super(LocationPreferenceSlotSelectionStrategy.createDefault());
 	}
 
 	protected LocationPreferenceSlotSelectionStrategyTest(SlotSelectionStrategy slotSelectionStrategy) {
@@ -40,16 +44,27 @@ public class LocationPreferenceSlotSelectionStrategyTest extends SlotSelectionSt
 	}
 
 	@Test
-	public void testResourceProfileRespected() {
+	public void testPhysicalSlotResourceProfileRespected() {
 
-		SlotProfile slotProfile = new SlotProfile(biggerResourceProfile, Collections.emptyList(), Collections.emptySet());
+		SlotProfile slotProfile = SlotProfile.priorAllocation(
+			resourceProfile,
+			biggerResourceProfile,
+			Collections.emptyList(),
+			Collections.emptyList(),
+			Collections.emptySet());
 
 		Optional<SlotSelectionStrategy.SlotInfoAndLocality> match = runMatching(slotProfile);
-		Assert.assertTrue(match.get().getSlotInfo().getResourceProfile().isMatching(slotProfile.getResourceProfile()));
+		Assert.assertTrue(match.get().getSlotInfo().getResourceProfile().isMatching(slotProfile.getPhysicalSlotResourceProfile()));
 
-		ResourceProfile evenBiggerResourceProfile =
-			new ResourceProfile(biggerResourceProfile.getCpuCores() + 1, resourceProfile.getHeapMemoryInMB());
-		slotProfile = new SlotProfile(evenBiggerResourceProfile, Collections.emptyList(), Collections.emptySet());
+		ResourceProfile evenBiggerResourceProfile = ResourceProfile.fromResources(
+			biggerResourceProfile.getCpuCores().getValue().doubleValue() + 1.0,
+			resourceProfile.getTaskHeapMemory().getMebiBytes());
+		slotProfile = SlotProfile.priorAllocation(
+			resourceProfile,
+			evenBiggerResourceProfile,
+			Collections.emptyList(),
+			Collections.emptyList(),
+			Collections.emptySet());
 
 		match = runMatching(slotProfile);
 		Assert.assertFalse(match.isPresent());
@@ -58,38 +73,46 @@ public class LocationPreferenceSlotSelectionStrategyTest extends SlotSelectionSt
 	@Test
 	public void matchNoRequirements() {
 
-		SlotProfile slotProfile = new SlotProfile(ResourceProfile.UNKNOWN, Collections.emptyList(), Collections.emptySet());
+		SlotProfile slotProfile = SlotProfile.noRequirements();
 		Optional<SlotSelectionStrategy.SlotInfoAndLocality> match = runMatching(slotProfile);
 
-		Assert.assertTrue(candidates.contains(match.get().getSlotInfo()));
+		Assert.assertTrue(
+				candidates.stream()
+						.map(SlotSelectionStrategy.SlotInfoAndResources::getSlotInfo)
+						.collect(Collectors.toList())
+						.contains(match.get().getSlotInfo()));
 	}
 
 	@Test
 	public void matchPreferredLocationNotAvailable() {
 
-		SlotProfile slotProfile = new SlotProfile(resourceProfile, Collections.singletonList(tmlX), Collections.emptySet());
+		SlotProfile slotProfile = SlotProfile.preferredLocality(resourceProfile, Collections.singletonList(tmlX));
 		Optional<SlotSelectionStrategy.SlotInfoAndLocality> match = runMatching(slotProfile);
 
-		Assert.assertTrue(candidates.contains(match.get().getSlotInfo()));
+		Assert.assertTrue(
+				candidates.stream()
+						.map(SlotSelectionStrategy.SlotInfoAndResources::getSlotInfo)
+						.collect(Collectors.toList())
+						.contains(match.get().getSlotInfo()));
 	}
 
 	@Test
 	public void matchPreferredLocation() {
 
-		SlotProfile slotProfile = new SlotProfile(resourceProfile, Collections.singletonList(tml2), Collections.emptySet());
+		SlotProfile slotProfile = SlotProfile.preferredLocality(resourceProfile, Collections.singletonList(tml2));
 		Optional<SlotSelectionStrategy.SlotInfoAndLocality> match = runMatching(slotProfile);
 
-		Assert.assertEquals(ssc2, match.get().getSlotInfo());
+		Assert.assertEquals(slotInfo2, match.get().getSlotInfo());
 
-		slotProfile = new SlotProfile(resourceProfile, Arrays.asList(tmlX, tml4), Collections.emptySet());
+		slotProfile = SlotProfile.preferredLocality(resourceProfile, Arrays.asList(tmlX, tml4));
 		match = runMatching(slotProfile);
 
-		Assert.assertEquals(ssc4, match.get().getSlotInfo());
+		Assert.assertEquals(slotInfo4, match.get().getSlotInfo());
 
-		slotProfile = new SlotProfile(resourceProfile, Arrays.asList(tml3, tml1, tml3, tmlX), Collections.emptySet());
+		slotProfile = SlotProfile.preferredLocality(resourceProfile, Arrays.asList(tml3, tml1, tml3, tmlX));
 		match = runMatching(slotProfile);
 
-		Assert.assertEquals(ssc3, match.get().getSlotInfo());
+		Assert.assertEquals(slotInfo3, match.get().getSlotInfo());
 	}
 
 	@Test
@@ -99,10 +122,15 @@ public class LocationPreferenceSlotSelectionStrategyTest extends SlotSelectionSt
 		blacklisted.add(aid2);
 		blacklisted.add(aid3);
 		blacklisted.add(aid4);
-		SlotProfile slotProfile = new SlotProfile(resourceProfile, Collections.singletonList(tml3), Collections.singletonList(aid3), blacklisted);
+		SlotProfile slotProfile = SlotProfile.priorAllocation(
+			resourceProfile,
+			resourceProfile,
+			Collections.singletonList(tml3),
+			Collections.singletonList(aid3),
+			blacklisted);
 		Optional<SlotSelectionStrategy.SlotInfoAndLocality> match = runMatching(slotProfile);
 
 		// available previous allocation should override blacklisting
-		Assert.assertEquals(ssc3, match.get().getSlotInfo());
+		Assert.assertEquals(slotInfo3, match.get().getSlotInfo());
 	}
 }

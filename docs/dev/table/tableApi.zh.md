@@ -44,6 +44,9 @@ The following example shows the differences between the Scala and Java Table API
 The Java Table API is enabled by importing `org.apache.flink.table.api.java.*`. The following example shows how a Java Table API program is constructed and how expressions are specified as strings.
 
 {% highlight java %}
+import org.apache.flink.table.api._
+import org.apache.flink.table.api.java._
+
 // environment configuration
 ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 BatchTableEnvironment tEnv = BatchTableEnvironment.create(env);
@@ -52,7 +55,7 @@ BatchTableEnvironment tEnv = BatchTableEnvironment.create(env);
 // ...
 
 // specify table program
-Table orders = tEnv.scan("Orders"); // schema (a, b, c, rowtime)
+Table orders = tEnv.from("Orders"); // schema (a, b, c, rowtime)
 
 Table counts = orders
         .groupBy("a")
@@ -73,6 +76,7 @@ The following example shows how a Scala Table API program is constructed. Table 
 
 {% highlight scala %}
 import org.apache.flink.api.scala._
+import org.apache.flink.table.api._
 import org.apache.flink.table.api.scala._
 
 // environment configuration
@@ -83,7 +87,7 @@ val tEnv = BatchTableEnvironment.create(env)
 // ...
 
 // specify table program
-val orders = tEnv.scan("Orders") // schema (a, b, c, rowtime)
+val orders = tEnv.from("Orders") // schema (a, b, c, rowtime)
 
 val result = orders
                .groupBy('a)
@@ -101,19 +105,21 @@ val result = orders
 
 {% highlight python %}
 from pyflink.table import *
+from pyflink.dataset import *
 
 # environment configuration
-t_env = TableEnvironment.create(TableConfig.Builder().as_batch_execution().build())
+env = ExecutionEnvironment.get_execution_environment()
+t_env = TableEnvironment.create(env, TableConfig())
 
 # register Orders table and Result table sink in table environment
 # ...
 
 # specify table program
-orders = t_env.scan("Orders")  # schema (a, b, c, rowtime)
+orders = t_env.from_path("Orders")  # schema (a, b, c, rowtime)
 
 orders.group_by("a").select("a, b.count as cnt").insert_into("result")
 
-t_env.execute()
+t_env.execute("python_job")
 
 {% endhighlight %}
 
@@ -130,7 +136,7 @@ The next example shows a more complex Table API program. The program scans again
 // ...
 
 // specify table program
-Table orders = tEnv.scan("Orders"); // schema (a, b, c, rowtime)
+Table orders = tEnv.from("Orders"); // schema (a, b, c, rowtime)
 
 Table result = orders
         .filter("a.isNotNull && b.isNotNull && c.isNotNull")
@@ -149,7 +155,7 @@ Table result = orders
 // ...
 
 // specify table program
-val orders: Table = tEnv.scan("Orders") // schema (a, b, c, rowtime)
+val orders: Table = tEnv.from("Orders") // schema (a, b, c, rowtime)
 
 val result: Table = orders
         .filter('a.isNotNull && 'b.isNotNull && 'c.isNotNull)
@@ -168,7 +174,7 @@ val result: Table = orders
 # ...
 
 # specify table program
-orders = t_env.scan("Orders")  # schema (a, b, c, rowtime)
+orders = t_env.from_path("Orders")  # schema (a, b, c, rowtime)
 
 result = orders.filter("a.isNotNull && b.isNotNull && c.isNotNull") \
                .select("a.lowerCase() as a, b, rowtime") \
@@ -204,13 +210,13 @@ The Table API supports the following operations. Please note that not all operat
   <tbody>
   	<tr>
   		<td>
-        <strong>Scan</strong><br>
+        <strong>From</strong><br>
         <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span>
       </td>
   		<td>
         <p>Similar to the FROM clause in a SQL query. Performs a scan of a registered table.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 {% endhighlight %}
       </td>
   	</tr>
@@ -222,7 +228,7 @@ Table orders = tableEnv.scan("Orders");
       <td>
         <p>Similar to a SQL SELECT statement. Performs a select operation.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.select("a, c as d");
 {% endhighlight %}
         <p>You can use star (<code>*</code>) to act as a wild card, selecting all of the columns in the table.</p>
@@ -239,7 +245,7 @@ Table result = orders.select("*");
       <td>
         <p>Renames fields.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.as("x, y, z, t");
 {% endhighlight %}
       </td>
@@ -253,12 +259,12 @@ Table result = orders.as("x, y, z, t");
       <td>
         <p>Similar to a SQL WHERE clause. Filters out rows that do not pass the filter predicate.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.where("b === 'red'");
 {% endhighlight %}
 or
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.filter("a % 2 === 0");
 {% endhighlight %}
       </td>
@@ -279,13 +285,13 @@ Table result = orders.filter("a % 2 === 0");
   <tbody>
   	<tr>
   		<td>
-        <strong>Scan</strong><br>
+        <strong>From</strong><br>
         <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span>
       </td>
   		<td>
         <p>Similar to the FROM clause in a SQL query. Performs a scan of a registered table.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 {% endhighlight %}
       </td>
   	</tr>
@@ -297,12 +303,12 @@ val orders: Table = tableEnv.scan("Orders")
       <td>
         <p>Similar to a SQL SELECT statement. Performs a select operation.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result = orders.select('a, 'c as 'd)
 {% endhighlight %}
         <p>You can use star (<code>*</code>) to act as a wild card, selecting all of the columns in the table.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result = orders.select('*)
 {% endhighlight %}
       </td>
@@ -315,7 +321,7 @@ val result = orders.select('*)
       <td>
         <p>Renames fields.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders").as('x, 'y, 'z, 't)
+val orders: Table = tableEnv.from("Orders").as('x, 'y, 'z, 't)
 {% endhighlight %}
       </td>
     </tr>
@@ -328,12 +334,12 @@ val orders: Table = tableEnv.scan("Orders").as('x, 'y, 'z, 't)
       <td>
         <p>Similar to a SQL WHERE clause. Filters out rows that do not pass the filter predicate.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result = orders.filter('a % 2 === 0)
 {% endhighlight %}
 or
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result = orders.where('b === "red")
 {% endhighlight %}
       </td>
@@ -359,7 +365,7 @@ val result = orders.where('b === "red")
   		<td>
         <p>类似于SQL请求中的FROM子句，将一个环境中已注册的表转换成Table对象。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 {% endhighlight %}
       </td>
   	</tr>
@@ -371,7 +377,7 @@ orders = table_env.scan("Orders")
       <td>
         <p>类似于SQL请求中的SELECT子句，执行一个select操作。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.select("a, c as d")
 {% endhighlight %}
         <p>您可以使用星号 (<code>*</code>) 表示选择表中的所有列。</p>
@@ -388,7 +394,7 @@ result = orders.select("*")
       <td>
         <p>重命名字段。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.alias("x, y, z, t")
 {% endhighlight %}
       </td>
@@ -402,12 +408,12 @@ result = orders.alias("x, y, z, t")
       <td>
         <p>类似于SQL请求中的WHERE子句，过滤掉表中不满足条件的行。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.where("b === 'red'")
 {% endhighlight %}
 or
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.filter("a % 2 === 0")
 {% endhighlight %}
       </td>
@@ -440,7 +446,7 @@ result = orders.filter("a % 2 === 0")
           <td>
           <p>Performs a field add operation. It will throw an exception if the added fields already exist.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.addColumns("concat(c, 'sunny')");
 {% endhighlight %}
 </td>
@@ -454,7 +460,7 @@ Table result = orders.addColumns("concat(c, 'sunny')");
                   <td>
                   <p>Performs a field add operation. Existing fields will be replaced if add columns name is the same as the existing column name.  Moreover, if the added fields have duplicate field name, then the last one is used. </p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.addOrReplaceColumns("concat(c, 'sunny') as desc");
 {% endhighlight %}
                   </td>
@@ -467,7 +473,7 @@ Table result = orders.addOrReplaceColumns("concat(c, 'sunny') as desc");
                   <td>
                   <p>Performs a field drop operation. The field expressions should be field reference expressions, and only existing fields can be dropped.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.dropColumns("b, c");
 {% endhighlight %}
                   </td>
@@ -480,7 +486,7 @@ Table result = orders.dropColumns("b, c");
                   <td>
                   <p>Performs a field rename operation. The field expressions should be alias expressions, and only the existing fields can be renamed.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.renameColumns("b as b2, c as c2");
 {% endhighlight %}
                   </td>
@@ -507,7 +513,7 @@ Table result = orders.renameColumns("b as b2, c as c2");
           <td>
             <p>Performs a field add operation. It will throw an exception if the added fields already exist.</p>
 {% highlight scala %}
-val orders = tableEnv.scan("Orders");
+val orders = tableEnv.from("Orders");
 val result = orders.addColumns(concat('c, "Sunny"))
 {% endhighlight %}
           </td>
@@ -520,7 +526,7 @@ val result = orders.addColumns(concat('c, "Sunny"))
                   <td>
                      <p>Performs a field add operation. Existing fields will be replaced if add columns name is the same as the existing column name.  Moreover, if the added fields have duplicate field name, then the last one is used. </p>
 {% highlight scala %}
-val orders = tableEnv.scan("Orders");
+val orders = tableEnv.from("Orders");
 val result = orders.addOrReplaceColumns(concat('c, "Sunny") as 'desc)
 {% endhighlight %}
                   </td>
@@ -533,7 +539,7 @@ val result = orders.addOrReplaceColumns(concat('c, "Sunny") as 'desc)
                   <td>
                     <p>Performs a field drop operation. The field expressions should be field reference expressions, and only existing fields can be dropped.</p>
 {% highlight scala %}
-val orders = tableEnv.scan("Orders");
+val orders = tableEnv.from("Orders");
 val result = orders.dropColumns('b, 'c)
 {% endhighlight %}
                   </td>
@@ -546,7 +552,7 @@ val result = orders.dropColumns('b, 'c)
                   <td>
                     <p>Performs a field rename operation. The field expressions should be alias expressions, and only the existing fields can be renamed.</p>
 {% highlight scala %}
-val orders = tableEnv.scan("Orders");
+val orders = tableEnv.from("Orders");
 val result = orders.renameColumns('b as 'b2, 'c as 'c2)
 {% endhighlight %}
                   </td>
@@ -572,7 +578,7 @@ val result = orders.renameColumns('b as 'b2, 'c as 'c2)
           <td>
           <p>执行新增字段操作。如果欲添加字段已经存在，将会抛出异常。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.add_columns("concat(c, 'sunny')")
 {% endhighlight %}
 </td>
@@ -586,7 +592,7 @@ result = orders.add_columns("concat(c, 'sunny')")
                   <td>
                   <p>执行新增字段操作。如果欲添加字段已经存在，将会替换该字段。如果新增字段列表中有同名字段，取最靠后的为有效字段。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.add_or_replace_columns("concat(c, 'sunny') as desc")
 {% endhighlight %}
                   </td>
@@ -599,7 +605,7 @@ result = orders.add_or_replace_columns("concat(c, 'sunny') as desc")
                   <td>
                   <p>执行删除字段操作。参数必须是字段列表，并且必须是已经存在的字段才能被删除。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.drop_columns("b, c")
 {% endhighlight %}
                   </td>
@@ -612,7 +618,7 @@ result = orders.drop_columns("b, c")
                   <td>
                   <p>执行重命名字段操作。参数必须是字段别名(例：b as b2)列表，并且必须是已经存在的字段才能被重命名。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.rename_columns("b as b2, c as c2")
 {% endhighlight %}
                   </td>
@@ -647,7 +653,7 @@ result = orders.rename_columns("b as b2, c as c2")
       <td>
         <p>Similar to a SQL GROUP BY clause. Groups the rows on the grouping keys with a following running aggregation operator to aggregate rows group-wise.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.groupBy("a").select("a, b.sum as d");
 {% endhighlight %}
         <p><b>Note:</b> For streaming queries the required state to compute the query result might grow infinitely depending on the type of aggregation and the number of distinct grouping keys. Please provide a query configuration with valid retention interval to prevent excessive state size. See <a href="streaming/query_configuration.html">Query Configuration</a> for details.</p>
@@ -661,7 +667,7 @@ Table result = orders.groupBy("a").select("a, b.sum as d");
     	<td>
         <p>Groups and aggregates a table on a <a href="#group-windows">group window</a> and possibly one or more grouping keys.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders
     .window(Tumble.over("5.minutes").on("rowtime").as("w")) // define window
     .groupBy("a, w") // group by key and window
@@ -677,7 +683,7 @@ Table result = orders
       <td>
        <p>Similar to a SQL OVER clause. Over window aggregates are computed for each row, based on a window (range) of preceding and succeeding rows. See the <a href="#over-windows">over windows section</a> for more details.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders
     // define window
     .window(Over
@@ -700,7 +706,7 @@ Table result = orders
       <td>
         <p>Similar to a SQL DISTINCT aggregation clause such as COUNT(DISTINCT a). Distinct aggregation declares that an aggregation function (built-in or user-defined) is only applied on distinct input values. Distinct can be applied to <b>GroupBy Aggregation</b>, <b>GroupBy Window Aggregation</b> and <b>Over Window Aggregation</b>.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 // Distinct aggregation on group by
 Table groupByDistinctResult = orders
     .groupBy("a")
@@ -720,7 +726,7 @@ Table result = orders
 {% endhighlight %}
         <p>User-defined aggregation function can also be used with DISTINCT modifiers. To calculate the aggregate results only for distinct values, simply add the distinct modifier towards the aggregation function. </p>
 {% highlight java %}
-Table orders = tEnv.scan("Orders");
+Table orders = tEnv.from("Orders");
 
 // Use distinct aggregation for user-defined aggregate functions
 tEnv.registerFunction("myUdagg", new MyUdagg());
@@ -738,10 +744,10 @@ orders.groupBy("users").select("users, myUdagg.distinct(points) as myDistinctRes
       <td>
         <p>Similar to a SQL DISTINCT clause. Returns records with distinct value combinations.</p>
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders.distinct();
 {% endhighlight %}
-        <p><b>Note:</b> For streaming queries the required state to compute the query result might grow infinitely depending on the number of distinct fields. Please provide a query configuration with valid retention interval to prevent excessive state size. See <a href="streaming/query_configuration.html">Query Configuration</a> for details.</p>
+        <p><b>Note:</b> For streaming queries the required state to compute the query result might grow infinitely depending on the number of distinct fields. Please provide a query configuration with valid retention interval to prevent excessive state size. If state cleaning is enabled, distinct have to emit messages to prevent too early state eviction of downstream operators which makes distinct contains result updating. See <a href="streaming/query_configuration.html">Query Configuration</a> for details.</p>
       </td>
     </tr>
   </tbody>
@@ -768,7 +774,7 @@ Table result = orders.distinct();
       <td>
         <p>Similar to a SQL GROUP BY clause. Groups the rows on the grouping keys with a following running aggregation operator to aggregate rows group-wise.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result = orders.groupBy('a).select('a, 'b.sum as 'd)
 {% endhighlight %}
         <p><b>Note:</b> For streaming queries the required state to compute the query result might grow infinitely depending on the type of aggregation and the number of distinct grouping keys. Please provide a query configuration with valid retention interval to prevent excessive state size. See <a href="streaming/query_configuration.html">Query Configuration</a> for details.</p>
@@ -782,7 +788,7 @@ val result = orders.groupBy('a).select('a, 'b.sum as 'd)
     	<td>
         <p>Groups and aggregates a table on a <a href="#group-windows">group window</a> and possibly one or more grouping keys.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result: Table = orders
     .window(Tumble over 5.minutes on 'rowtime as 'w) // define window
     .groupBy('a, 'w) // group by key and window
@@ -798,7 +804,7 @@ val result: Table = orders
     	<td>
        <p>Similar to a SQL OVER clause. Over window aggregates are computed for each row, based on a window (range) of preceding and succeeding rows. See the <a href="#over-windows">over windows section</a> for more details.</p>
        {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result: Table = orders
     // define window
     .window(Over
@@ -821,7 +827,7 @@ val result: Table = orders
       <td>
         <p>Similar to a SQL DISTINCT AGGREGATION clause such as COUNT(DISTINCT a). Distinct aggregation declares that an aggregation function (built-in or user-defined) is only applied on distinct input values. Distinct can be applied to <b>GroupBy Aggregation</b>, <b>GroupBy Window Aggregation</b> and <b>Over Window Aggregation</b>.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders");
+val orders: Table = tableEnv.from("Orders");
 // Distinct aggregation on group by
 val groupByDistinctResult = orders
     .groupBy('a)
@@ -841,7 +847,7 @@ val result = orders
 {% endhighlight %}
         <p>User-defined aggregation function can also be used with DISTINCT modifiers. To calculate the aggregate results only for distinct values, simply add the distinct modifier towards the aggregation function. </p>
 {% highlight scala %}
-val orders: Table = tEnv.scan("Orders");
+val orders: Table = tEnv.from("Orders");
 
 // Use distinct aggregation for user-defined aggregate functions
 val myUdagg = new MyUdagg();
@@ -858,7 +864,7 @@ orders.groupBy('users).select('users, myUdagg.distinct('points) as 'myDistinctRe
       <td>
         <p>Similar to a SQL DISTINCT clause. Returns records with distinct value combinations.</p>
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 val result = orders.distinct()
 {% endhighlight %}
         <p><b>Note:</b> For streaming queries the required state to compute the query result might grow infinitely depending on the number of distinct fields. Please provide a query configuration with valid retention interval to prevent excessive state size. See <a href="streaming/query_configuration.html">Query Configuration</a> for details.</p>
@@ -886,7 +892,7 @@ val result = orders.distinct()
       <td>
         <p>类似于SQL的GROUP BY子句。将数据按照指定字段进行分组，之后对各组内数据执行聚合操作。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.group_by("a").select("a, b.sum as d")
 {% endhighlight %}
         <p><b>注意：</b> 对于流式查询，计算查询结果所需的状态（state）可能会无限增长，具体情况取决于聚合操作的类型和分组的数量。您可能需要在查询配置中设置状态保留时间，以防止状态过大。详情请看<a href="streaming/query_configuration.html">查询配置</a>。</p>
@@ -900,7 +906,7 @@ result = orders.group_by("a").select("a, b.sum as d")
     	<td>
         <p>在一个窗口上分组和聚合数据，可包含其它分组字段。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.window(Tumble.over("5.minutes").on("rowtime").alias("w")) \ 
                .group_by("a, w") \
                .select("a, w.start, w.end, w.rowtime, b.sum as d")
@@ -915,11 +921,11 @@ result = orders.window(Tumble.over("5.minutes").on("rowtime").alias("w")) \
       <td>
        <p>类似于SQL中的OVER开窗函数。Over窗口聚合对每一行都进行一次聚合计算，聚合的对象是以当前行的位置为基准，向前向后取一个区间范围内的所有数据。详情请见<a href="#over-windows">Over窗口</a>一节。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
-result = orders.over_window(Over.partition_by("a").order_by("rowtime") \
-      	       .preceding("UNBOUNDED_RANGE").following("CURRENT_RANGE") \
-               .alias("w")) \
-               .select("a, b.avg over w, b.max over w, b.min over w")
+orders = table_env.from_path("Orders")
+result = orders.over_window(Over.partition_by("a").order_by("rowtime")
+                            .preceding("UNBOUNDED_RANGE").following("CURRENT_RANGE")
+                            .alias("w")) \
+    .select("a, b.avg over w, b.max over w, b.min over w")
 {% endhighlight %}
        <p><b>注意：</b> 所有的聚合操作必须在同一个窗口上定义，即分组，排序，范围等属性必须一致。目前，窗口区间范围的向前（PRECEDING）取值没有限制，可以为无界（UNBOUNDED），但是向后（FOLLOWING）只支持当前行（CURRENT ROW），其它向后范围取值暂不支持。排序（ORDER BY）属性必须指定单个<a href="streaming/time_attributes.html">时间属性</a>。</p>
       </td>
@@ -933,7 +939,7 @@ result = orders.over_window(Over.partition_by("a").order_by("rowtime") \
       <td>
         <p>类似于SQL聚合函数中的的DISTINCT关键字比如COUNT(DISTINCT a)。带有distinct标记的聚合函数只会接受不重复的输入，重复输入将被丢弃。这个去重特性可以在<b>分组聚合（GroupBy Aggregation）</b>，<b>分组窗口聚合（GroupBy Window Aggregation）</b>以及<b>Over窗口聚合（Over Window Aggregation）</b>上使用。</p>
 {% highlight python %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 # Distinct aggregation on group by
 group_by_distinct_result = orders.group_by("a") \
                                  .select("a, b.sum.distinct as d")
@@ -962,7 +968,7 @@ result = orders.over_window(Over
       <td>
         <p>类似于SQL中的DISTINCT子句。返回去重后的数据。</p>
 {% highlight java %}
-orders = table_env.scan("Orders")
+orders = table_env.from_path("Orders")
 result = orders.distinct()
 {% endhighlight %}
         <p><b>注意：</b> 对于流式查询，计算查询结果所需的状态（state）可能会无限增长，具体情况取决于执行去重判断时参与判断的字段的数量。您可能需要在查询配置中设置状态保留时间，以防止状态过大。详情请看<a href="streaming/query_configuration.html">查询配置</a>。</p>
@@ -1054,7 +1060,7 @@ Table result = left.join(right)
     </tr>
     <tr>
     	<td>
-        <strong>Inner Join with Table Function</strong><br>
+        <strong>Inner Join with Table Function (UDTF)</strong><br>
         <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span>
       </td>
     	<td>
@@ -1066,7 +1072,7 @@ TableFunction<String> split = new MySplitUDTF();
 tableEnv.registerFunction("split", split);
 
 // join
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders
     .joinLateral("split(c).as(s, t, v)")
     .select("a, b, s, t, v");
@@ -1075,7 +1081,7 @@ Table result = orders
     </tr>
     <tr>
     	<td>
-        <strong>Left Outer Join with Table Function</strong><br>
+        <strong>Left Outer Join with Table Function (UDTF)</strong><br>
         <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span>
       </td>
       <td>
@@ -1087,7 +1093,7 @@ TableFunction<String> split = new MySplitUDTF();
 tableEnv.registerFunction("split", split);
 
 // join
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders
     .leftOuterJoinLateral("split(c).as(s, t, v)")
     .select("a, b, s, t, v");
@@ -1106,7 +1112,7 @@ Table result = orders
 
         <p>Currently only inner joins with temporal tables are supported.</p>
 {% highlight java %}
-Table ratesHistory = tableEnv.scan("RatesHistory");
+Table ratesHistory = tableEnv.from("RatesHistory");
 
 // register temporal table function with a time attribute and primary key
 TemporalTableFunction rates = ratesHistory.createTemporalTableFunction(
@@ -1115,7 +1121,7 @@ TemporalTableFunction rates = ratesHistory.createTemporalTableFunction(
 tableEnv.registerFunction("rates", rates);
 
 // join with "Orders" based on the time attribute and key
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 Table result = orders
     .joinLateral("rates(o_proctime)", "o_currency = r_currency")
 {% endhighlight %}
@@ -1202,7 +1208,7 @@ val result = left.join(right)
     </tr>
     <tr>
     	<td>
-        <strong>Inner Join with Table Function</strong><br>
+        <strong>Inner Join with Table Function (UDTF)</strong><br>
         <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span>
       </td>
     	<td>
@@ -1221,7 +1227,7 @@ val result: Table = table
     </tr>
     <tr>
     	<td>
-        <strong>Left Outer Join with Table Function</strong><br>
+        <strong>Left Outer Join with Table Function (UDTF)</strong><br>
         <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span></td>
     	<td>
         <p>Joins a table with the results of a table function. Each row of the left (outer) table is joined with all rows produced by the corresponding call of the table function. If a table function call returns an empty result, the corresponding outer row is preserved and the result padded with null values.</p>
@@ -1250,13 +1256,13 @@ val result: Table = table
 
         <p>Currently only inner joins with temporal tables are supported.</p>
 {% highlight scala %}
-val ratesHistory = tableEnv.scan("RatesHistory")
+val ratesHistory = tableEnv.from("RatesHistory")
 
 // register temporal table function with a time attribute and primary key
 val rates = ratesHistory.createTemporalTableFunction('r_proctime, 'r_currency)
 
 // join with "Orders" based on the time attribute and key
-val orders = tableEnv.scan("Orders")
+val orders = tableEnv.from("Orders")
 val result = orders
     .joinLateral(rates('o_rowtime), 'r_currency === 'o_currency)
 {% endhighlight %}
@@ -1286,8 +1292,8 @@ val result = orders
       <td>
         <p>类似于SQL的JOIN子句。对两张表执行内连接操作。两张表必须具有不同的字段名称，并且必须在join方法或者随后的where或filter方法中定义至少一个等值连接条件。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("d, e, f")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("d, e, f")
 result = left.join(right).where("a = d").select("a, b, e")
 {% endhighlight %}
 <p><b>注意：</b> 对于流式查询，计算查询结果所需的状态（state）可能会无限增长，具体取决于不重复的输入行的数量。您可能需要在查询配置中设置状态保留时间，以防止状态过大。详情请看<a href="streaming/query_configuration.html">查询配置</a>。</p>
@@ -1304,8 +1310,8 @@ result = left.join(right).where("a = d").select("a, b, e")
       <td>
         <p>类似于SQL的LEFT/RIGHT/FULL OUTER JOIN子句。对两张表执行外连接操作。两张表必须具有不同的字段名称，并且必须定义至少一个等值连接条件。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("d, e, f")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("d, e, f")
 
 left_outer_result = left.left_outer_join(right, "a = d").select("a, b, e")
 right_outer_result = left.right_outer_join(right, "a = d").select("a, b, e")
@@ -1325,20 +1331,38 @@ full_outer_result = left.full_outer_join(right, "a = d").select("a, b, e")
     </tr>
     <tr>
     	<td>
-        <strong>Inner Join with Table Function</strong><br>
+        <strong>Inner Join with Table Function (UDTF)</strong><br>
         <span class="label label-primary">批处理</span> <span class="label label-primary">流处理</span>
       </td>
     	<td>
-        <p>Python API暂不支持。</p>
+        <p>将一张表与一个表函数的执行结果执行内连接操作。左表的每一行都会进行一次表函数调用，调用将会返回0个，1个或多个结果，再与这些结果执行连接操作。如果一行数据对应的表函数调用返回了一个空的结果集，则这行数据会被丢弃。
+        </p>
+{% highlight python %}
+# register Java User-Defined Table Function
+table_env.register_java_function("split", "com.my.udf.MySplitUDTF")
+
+# join
+orders = table_env.from_path("Orders")
+result = orders.join_lateral("split(c).as(s, t, v)").select("a, b, s, t, v")
+{% endhighlight %}
       </td>
     </tr>
     <tr>
     	<td>
-        <strong>Left Outer Join with Table Function</strong><br>
+        <strong>Left Outer Join with Table Function (UDTF)</strong><br>
         <span class="label label-primary">批处理</span> <span class="label label-primary">流处理</span>
       </td>
       <td>
-        <p>Python API暂不支持。</p>
+        <p>将一张表与一个表函数的执行结果执行左连接操作。左表的每一行都会进行一次表函数调用，调用将会返回0个，1个或多个结果，再与这些结果执行连接操作。如果一行数据对应的表函数调用返回了一个空的结果集，这行数据依然会被保留，对应的右表数值用null(python为None)填充。</p>
+        <p><b>注意：</b>目前，表函数的左连接操作的连接条件(join predicate)只能为空或者为"true"常量。</p>
+{% highlight python %}
+# register Java User-Defined Table Function
+table_env.register_java_function("split", "com.my.udf.MySplitUDTF")
+
+# join
+orders = table_env.from_path("Orders")
+result = orders.left_outer_join_lateral("split(c).as(s, t, v)").select("a, b, s, t, v")
+{% endhighlight %}
       </td>
     </tr>
     <tr>
@@ -1477,7 +1501,7 @@ Table right = ds2.toTable(tableEnv, "a");
 Table result = left.select("a, b, c").where("a.in(" + right + ")");
 
 // using explicit registration
-tableEnv.registerTable("RightTable", right);
+tableEnv.createTemporaryView("RightTable", right);
 Table result = left.select("a, b, c").where("a.in(RightTable)");
 {% endhighlight %}
 
@@ -1626,8 +1650,8 @@ val result = left.select('a, 'b, 'c).where('a.in(right))
       <td>
         <p>类似于SQL的UNION子句。将两张表组合成一张表，这张表拥有二者去除重复后的全部数据。两张表的字段和类型必须完全一致。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("a, b, c")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("a, b, c")
 result = left.union(right)
 {% endhighlight %}
       </td>
@@ -1641,8 +1665,8 @@ result = left.union(right)
       <td>
         <p>类似于SQL的UNION ALL子句。将两张表组合成一张表，这张表拥有二者的全部数据。两张表的字段和类型必须完全一致。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("a, b, c")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("a, b, c")
 result = left.union_all(right)
 {% endhighlight %}
       </td>
@@ -1656,8 +1680,8 @@ result = left.union_all(right)
       <td>
         <p>类似于SQL的INTERSECT子句。Intersect返回在两张表中都存在的数据。如果一个记录在两张表中不止出现一次，则只返回一次，即结果表没有重复记录。两张表的字段和类型必须完全一致。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("a, b, c")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("a, b, c")
 result = left.intersect(right)
 {% endhighlight %}
       </td>
@@ -1671,8 +1695,8 @@ result = left.intersect(right)
       <td>
         <p>类似于SQL的INTERSECT ALL子句。IntersectAll返回在两张表中都存在的数据。如果一个记录在两张表中不止出现一次，则按照它在两张表中都出现的次数返回，即结果表可能包含重复数据。两张表的字段和类型必须完全一致。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("a, b, c")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("a, b, c")
 result = left.intersect_all(right)
 {% endhighlight %}
       </td>
@@ -1686,8 +1710,8 @@ result = left.intersect_all(right)
       <td>
         <p>类似于SQL的EXCEPT子句。Minus返回仅存在于左表，不存在于右表中的数据。左表中的相同数据只会返回一次，即数据会被去重。两张表的字段和类型必须完全一致。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("a, b, c")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("a, b, c")
 result = left.minus(right);
 {% endhighlight %}
       </td>
@@ -1701,8 +1725,8 @@ result = left.minus(right);
       <td>
         <p>类似于SQL的EXCEPT ALL子句。MinusAll返回仅存在于左表，不存在于右表中的数据。如果一条数据在左表中出现了n次，在右表中出现了m次，最终这条数据将会被返回(n - m)次，即按右表中出现的次数来移除数据。两张表的字段和类型必须完全一致。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("a, b, c")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("a, b, c")
 result = left.minus_all(right)
 {% endhighlight %}
       </td>
@@ -1716,8 +1740,8 @@ result = left.minus_all(right)
       <td>
         <p>类似于SQL的IN子句。如果In左边表达式的值在给定的子查询结果中则返回true。子查询的结果必须为单列。此列数据类型必须和表达式一致。</p>
 {% highlight python %}
-left = table_env.scan("Source1").select("a, b, c")
-right = table_env.scan("Source2").select("a")
+left = table_env.from_path("Source1").select("a, b, c")
+right = table_env.from_path("Source2").select("a")
 
 # using implicit registration
 result = left.select("a, b, c").where("a.in(%s)" % right)
@@ -1855,7 +1879,7 @@ val result3: Table = in.orderBy('a.asc).offset(10).fetch(5)
       <td>
         <p>类似于SQL的ORDER BY子句。返回包括所有子并发分区内所有数据的全局排序结果。</p>
 {% highlight python %}
-in = table_env.scan("Source1").select("a, b, c")
+in = table_env.from_path("Source1").select("a, b, c")
 result = in.order_by("a.asc")
 {% endhighlight %}
       </td>
@@ -1869,7 +1893,7 @@ result = in.order_by("a.asc")
       <td>
         <p>类似于SQL的OFFSET和FETCH子句。Offset和Fetch从已排序的结果中返回指定数量的数据。Offset和Fetch在技术上是Order By操作的一部分，因此必须紧跟其后出现。</p>
 {% highlight python %}
-in = table_env.scan("Source1").select("a, b, c")
+in = table_env.from_path("Source1").select("a, b, c")
 
 # returns the first 5 records from the sorted result
 result1 = in.order_by("a.asc").fetch(5)
@@ -1912,7 +1936,7 @@ result3 = in.order_by("a.asc").offset(10).fetch(5)
         <p>Output tables must be registered in the TableEnvironment (see <a href="common.html#register-a-tablesink">Register a TableSink</a>). Moreover, the schema of the registered table must match the schema of the query.</p>
 
 {% highlight java %}
-Table orders = tableEnv.scan("Orders");
+Table orders = tableEnv.from("Orders");
 orders.insertInto("OutOrders");
 {% endhighlight %}
       </td>
@@ -1939,10 +1963,10 @@ orders.insertInto("OutOrders");
       <td>
         <p>Similar to the INSERT INTO clause in a SQL query. Performs a insertion into a registered output table.</p>
 
-        <p>Output tables must be registered in the TableEnvironment (see <a href="common.html#register-a-tablesink">Register a TableSink</a>). Moreover, the schema of the registered table must match the schema of the query.</p>
+        <p>Output tables must be registered in the TableEnvironment (see <a href="common.html#connector-tables">Connector tables</a>). Moreover, the schema of the registered table must match the schema of the query.</p>
 
 {% highlight scala %}
-val orders: Table = tableEnv.scan("Orders")
+val orders: Table = tableEnv.from("Orders")
 orders.insertInto("OutOrders")
 {% endhighlight %}
       </td>
@@ -1972,7 +1996,7 @@ orders.insertInto("OutOrders")
         <p>输出表必须先在TableEnvironment中注册（详见<a href="common.html#register-a-tablesink">注册一个TableSink</a>）。此外，注册的表的模式（schema）必须和请求的结果的模式（schema）相匹配。</p>
 
 {% highlight python %}
-orders = table_env.scan("Orders");
+orders = table_env.from_path("Orders");
 orders.insert_into("OutOrders");
 {% endhighlight %}
       </td>
@@ -2286,10 +2310,10 @@ A session window is defined by using the `Session` class as follows:
 <div data-lang="python" markdown="1">
 {% highlight python %}
 # Session Event-time Window
-.window(Session.withGap("10.minutes").on("rowtime").alias("w"))
+.window(Session.with_gap("10.minutes").on("rowtime").alias("w"))
 
 # Session Processing-time Window (assuming a processing-time attribute "proctime")
-.window(Session.withGap("10.minutes").on("proctime").alias("w"))
+.window(Session.with_gap("10.minutes").on("proctime").alias("w"))
 {% endhighlight %}
 </div>
 </div>
@@ -2323,7 +2347,7 @@ val table = input
 {% highlight python %}
 # define over window with alias w and aggregate over the over window w
 table = input.over_window([OverWindow w].alias("w")) \
-             .select("a, b.sum over w, c.min over w")
+    .select("a, b.sum over w, c.min over w")
 {% endhighlight %}
 </div>
 </div>
@@ -2636,54 +2660,111 @@ Table table = input
 
     <tr>
       <td>
-        <strong>GroupBy TableAggregation</strong><br>
+        <strong>Group Window Aggregate</strong><br>
+        <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span>
+      </td>
+      <td>
+        <p>Groups and aggregates a table on a <a href="#group-windows">group window</a> and possibly one or more grouping keys. You have to close the "aggregate" with a select statement. And the select statement does not support "*" or aggregate functions.</p>
+{% highlight java %}
+AggregateFunction myAggFunc = new MyMinMax();
+tableEnv.registerFunction("myAggFunc", myAggFunc);
+
+Table table = input
+    .window(Tumble.over("5.minutes").on("rowtime").as("w")) // define window
+    .groupBy("key, w") // group by key and window
+    .aggregate("myAggFunc(a) as (x, y)")
+    .select("key, x, y, w.start, w.end"); // access window properties and aggregate results
+{% endhighlight %}
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        <strong>FlatAggregate</strong><br>
         <span class="label label-primary">Streaming</span><br>
         <span class="label label-info">Result Updating</span>
       </td>
       <td>
         <p>Similar to a <b>GroupBy Aggregation</b>. Groups the rows on the grouping keys with the following running table aggregation operator to aggregate rows group-wise. The difference from an AggregateFunction is that TableAggregateFunction may return 0 or more records for a group. You have to close the "flatAggregate" with a select statement. And the select statement does not support aggregate functions.</p>
+        <p>Instead of using <code>emitValue</code> to output results, you can also use the <code>emitUpdateWithRetract</code> method. Different from <code>emitValue</code>, <code>emitUpdateWithRetract</code> is used to emit values that have been updated. This method outputs data incrementally in retract mode, i.e., once there is an update, we have to retract old records before sending new updated ones. The <code>emitUpdateWithRetract</code> method will be used in preference to the <code>emitValue</code> method if both methods are defined in the table aggregate function, because the method is treated to be more efficient than <code>emitValue</code> as it can output values incrementally. See <a href="{{ site.baseurl }}/dev/table/functions/udfs.html#table-aggregation-functions">Table Aggregation Functions</a> for details.</p>
 {% highlight java %}
-    public class MyMinMaxAcc {
-        public int min = 0;
-        public int max = 0;
+/**
+ * Accumulator for Top2.
+ */
+public class Top2Accum {
+    public Integer first;
+    public Integer second;
+}
+
+/**
+ * The top2 user-defined table aggregate function.
+ */
+public class Top2 extends TableAggregateFunction<Tuple2<Integer, Integer>, Top2Accum> {
+
+    @Override
+    public Top2Accum createAccumulator() {
+        Top2Accum acc = new Top2Accum();
+        acc.first = Integer.MIN_VALUE;
+        acc.second = Integer.MIN_VALUE;
+        return acc;
     }
 
-    public class MyMinMax extends TableAggregateFunction<Row, MyMinMaxAcc> {
 
-        public void accumulate(MyMinMaxAcc acc, int value) {
-            if (value < acc.min) {
-                acc.min = value;
-            }
-            if (value > acc.max) {
-                acc.max = value;
-            }
-        }
-
-        @Override
-        public MyMinMaxAcc createAccumulator() {
-            return new MyMinMaxAcc();
-        }
-
-        public void emitValue(MyMinMaxAcc acc, Collector<Row> out) {
-            out.collect(Row.of(acc.min, acc.min));
-            out.collect(Row.of(acc.max, acc.max));
-        }
-
-        @Override
-        public TypeInformation<Row> getResultType() {
-            return new RowTypeInfo(Types.INT, Types.INT);
+    public void accumulate(Top2Accum acc, Integer v) {
+        if (v > acc.first) {
+            acc.second = acc.first;
+            acc.first = v;
+        } else if (v > acc.second) {
+            acc.second = v;
         }
     }
 
-TableAggregateFunction tableAggFunc = new MyMinMax();
-tableEnv.registerFunction("myTableAggFunc", tableAggFunc);
-Table orders = tableEnv.scan("Orders");
+    public void merge(Top2Accum acc, java.lang.Iterable<Top2Accum> iterable) {
+        for (Top2Accum otherAcc : iterable) {
+            accumulate(acc, otherAcc.first);
+            accumulate(acc, otherAcc.second);
+        }
+    }
+
+    public void emitValue(Top2Accum acc, Collector<Tuple2<Integer, Integer>> out) {
+        // emit the value and rank
+        if (acc.first != Integer.MIN_VALUE) {
+            out.collect(Tuple2.of(acc.first, 1));
+        }
+        if (acc.second != Integer.MIN_VALUE) {
+            out.collect(Tuple2.of(acc.second, 2));
+        }
+    }
+}
+
+tEnv.registerFunction("top2", new Top2());
+Table orders = tableEnv.from("Orders");
 Table result = orders
-    .groupBy("a")
-    .flatAggregate("myTableAggFunc(a) as (x, y)")
-    .select("a, x, y");
+    .groupBy("key")
+    .flatAggregate("top2(a) as (v, rank)")
+    .select("key, v, rank");
 {% endhighlight %}
         <p><b>Note:</b> For streaming queries, the required state to compute the query result might grow infinitely depending on the type of aggregation and the number of distinct grouping keys. Please provide a query configuration with a valid retention interval to prevent excessive state size. See <a href="streaming/query_configuration.html">Query Configuration</a> for details.</p>
+      </td>
+    </tr>
+
+
+    <tr>
+      <td>
+        <strong>Group Window FlatAggregate</strong><br>
+        <span class="label label-primary">Streaming</span><br>
+      </td>
+      <td>
+        <p>Groups and aggregates a table on a <a href="#group-windows">group window</a> and possibly one or more grouping keys. You have to close the "flatAggregate" with a select statement. And the select statement does not support aggregate functions.</p>
+{% highlight java %}
+tableEnv.registerFunction("top2", new Top2());
+Table orders = tableEnv.from("Orders");
+Table result = orders
+    .window(Tumble.over("5.minutes").on("rowtime").as("w")) // define window
+    .groupBy("a, w") // group by key and window
+    .flatAggregate("top2(b) as (v, rank)")
+    .select("a, w.start, w.end, w.rowtime, v, rank"); // access window properties and aggregate results
+{% endhighlight %}
       </td>
     </tr>
   </tbody>
@@ -2793,7 +2874,7 @@ class MyMinMax extends AggregateFunction[Row, MyMinMaxAcc] {
   }
 }
 
-val myAggFunc: AggregateFunction = new MyMinMax
+val myAggFunc = new MyMinMax
 val table = input
   .groupBy('key)
   .aggregate(myAggFunc('a) as ('x, 'y))
@@ -2804,51 +2885,114 @@ val table = input
 
     <tr>
       <td>
-        <strong>GroupBy TableAggregation</strong><br>
+        <strong>Group Window Aggregate</strong><br>
+        <span class="label label-primary">Batch</span> <span class="label label-primary">Streaming</span>
+      </td>
+      <td>
+        <p>Groups and aggregates a table on a <a href="#group-windows">group window</a> and possibly one or more grouping keys. You have to close the "aggregate" with a select statement. And the select statement does not support "*" or aggregate functions.</p>
+{% highlight scala %}
+val myAggFunc = new MyMinMax
+val table = input
+    .window(Tumble over 5.minutes on 'rowtime as 'w) // define window
+    .groupBy('key, 'w) // group by key and window
+    .aggregate(myAggFunc('a) as ('x, 'y))
+    .select('key, 'x, 'y, 'w.start, 'w.end) // access window properties and aggregate results
+
+{% endhighlight %}
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        <strong>FlatAggregate</strong><br>
         <span class="label label-primary">Streaming</span><br>
         <span class="label label-info">Result Updating</span>
       </td>
       <td>
         <p>Similar to a <b>GroupBy Aggregation</b>. Groups the rows on the grouping keys with the following running table aggregation operator to aggregate rows group-wise. The difference from an AggregateFunction is that TableAggregateFunction may return 0 or more records for a group. You have to close the "flatAggregate" with a select statement. And the select statement does not support aggregate functions.</p>
+        <p>Instead of using <code>emitValue</code> to output results, you can also use the <code>emitUpdateWithRetract</code> method. Different from <code>emitValue</code>, <code>emitUpdateWithRetract</code> is used to emit values that have been updated. This method outputs data incrementally in retract mode, i.e., once there is an update, we have to retract old records before sending new updated ones. The <code>emitUpdateWithRetract</code> method will be used in preference to the <code>emitValue</code> method if both methods are defined in the table aggregate function, because the method is treated to be more efficient than <code>emitValue</code> as it can output values incrementally. See <a href="{{ site.baseurl }}/dev/table/functions/udfs.html#table-aggregation-functions">Table Aggregation Functions</a> for details.</p>
 {% highlight scala %}
-case class MyMinMaxAcc(var min: Int, var max: Int)
+import java.lang.{Integer => JInteger}
+import org.apache.flink.table.api.Types
+import org.apache.flink.table.functions.TableAggregateFunction
 
-class MyMinMax extends TableAggregateFunction[Row, MyMinMaxAcc] {
+/**
+ * Accumulator for top2.
+ */
+class Top2Accum {
+  var first: JInteger = _
+  var second: JInteger = _
+}
 
-  def accumulate(acc: MyMinMaxAcc, value: Int): Unit = {
-    if (value < acc.min) {
-      acc.min = value
+/**
+ * The top2 user-defined table aggregate function.
+ */
+class Top2 extends TableAggregateFunction[JTuple2[JInteger, JInteger], Top2Accum] {
+
+  override def createAccumulator(): Top2Accum = {
+    val acc = new Top2Accum
+    acc.first = Int.MinValue
+    acc.second = Int.MinValue
+    acc
+  }
+
+  def accumulate(acc: Top2Accum, v: Int) {
+    if (v > acc.first) {
+      acc.second = acc.first
+      acc.first = v
+    } else if (v > acc.second) {
+      acc.second = v
     }
-    if (value > acc.max) {
-      acc.max = value
+  }
+
+  def merge(acc: Top2Accum, its: JIterable[Top2Accum]): Unit = {
+    val iter = its.iterator()
+    while (iter.hasNext) {
+      val top2 = iter.next()
+      accumulate(acc, top2.first)
+      accumulate(acc, top2.second)
     }
   }
 
-  def resetAccumulator(acc: MyMinMaxAcc): Unit = {
-    acc.min = 0
-    acc.max = 0
-  }
-
-  override def createAccumulator(): MyMinMaxAcc = MyMinMaxAcc(0, 0)
-
-  def emitValue(acc: MyMinMaxAcc, out: Collector[Row]): Unit = {
-    out.collect(Row.of(Integer.valueOf(acc.min), Integer.valueOf(acc.min)))
-    out.collect(Row.of(Integer.valueOf(acc.max), Integer.valueOf(acc.max)))
-  }
-
-  override def getResultType: TypeInformation[Row] = {
-    new RowTypeInfo(Types.INT, Types.INT)
+  def emitValue(acc: Top2Accum, out: Collector[JTuple2[JInteger, JInteger]]): Unit = {
+    // emit the value and rank
+    if (acc.first != Int.MinValue) {
+      out.collect(JTuple2.of(acc.first, 1))
+    }
+    if (acc.second != Int.MinValue) {
+      out.collect(JTuple2.of(acc.second, 2))
+    }
   }
 }
 
-val tableAggFunc = new MyMinMax
-val orders: Table = tableEnv.scan("Orders")
+val top2 = new Top2
+val orders: Table = tableEnv.from("Orders")
 val result = orders
-    .groupBy('a)
-    .flatAggregate(tableAggFunc('a) as ('x, 'y))
-    .select('a, 'x, 'y)
+    .groupBy('key)
+    .flatAggregate(top2('a) as ('v, 'rank))
+    .select('key, 'v, 'rank)
 {% endhighlight %}
         <p><b>Note:</b> For streaming queries, the required state to compute the query result might grow infinitely depending on the type of aggregation and the number of distinct grouping keys. Please provide a query configuration with a valid retention interval to prevent excessive state size. See <a href="streaming/query_configuration.html">Query Configuration</a> for details.</p>
+      </td>
+    </tr>
+
+    <tr>
+      <td>
+        <strong>Group Window FlatAggregate</strong><br>
+        <span class="label label-primary">Streaming</span><br>
+      </td>
+      <td>
+        <p>Groups and aggregates a table on a <a href="#group-windows">group window</a> and possibly one or more grouping keys. You have to close the "flatAggregate" with a select statement. And the select statement does not support aggregate functions.</p>
+{% highlight scala %}
+val top2 = new Top2
+val orders: Table = tableEnv.from("Orders")
+val result = orders
+    .window(Tumble over 5.minutes on 'rowtime as 'w) // define window
+    .groupBy('a, 'w) // group by key and window
+    .flatAggregate(top2('b) as ('v, 'rank))
+    .select('a, w.start, 'w.end, 'w.rowtime, 'v, 'rank) // access window properties and aggregate results
+
+{% endhighlight %}
       </td>
     </tr>
   </tbody>
@@ -2861,35 +3005,13 @@ val result = orders
 Data Types
 ----------
 
-The Table API is built on top of Flink's DataSet and DataStream APIs. Internally, it also uses Flink's `TypeInformation` to define data types. Fully supported types are listed in `org.apache.flink.table.api.Types`. The following table summarizes the relation between Table API types, SQL types, and the resulting Java class.
-
-| Table API              | SQL                         | Java type              |
-| :--------------------- | :-------------------------- | :--------------------- |
-| `Types.STRING`         | `VARCHAR`                   | `java.lang.String`     |
-| `Types.BOOLEAN`        | `BOOLEAN`                   | `java.lang.Boolean`    |
-| `Types.BYTE`           | `TINYINT`                   | `java.lang.Byte`       |
-| `Types.SHORT`          | `SMALLINT`                  | `java.lang.Short`      |
-| `Types.INT`            | `INTEGER, INT`              | `java.lang.Integer`    |
-| `Types.LONG`           | `BIGINT`                    | `java.lang.Long`       |
-| `Types.FLOAT`          | `REAL, FLOAT`               | `java.lang.Float`      |
-| `Types.DOUBLE`         | `DOUBLE`                    | `java.lang.Double`     |
-| `Types.DECIMAL`        | `DECIMAL`                   | `java.math.BigDecimal` |
-| `Types.SQL_DATE`       | `DATE`                      | `java.sql.Date`        |
-| `Types.SQL_TIME`       | `TIME`                      | `java.sql.Time`        |
-| `Types.SQL_TIMESTAMP`  | `TIMESTAMP(3)`              | `java.sql.Timestamp`   |
-| `Types.INTERVAL_MONTHS`| `INTERVAL YEAR TO MONTH`    | `java.lang.Integer`    |
-| `Types.INTERVAL_MILLIS`| `INTERVAL DAY TO SECOND(3)` | `java.lang.Long`       |
-| `Types.PRIMITIVE_ARRAY`| `ARRAY`                     | e.g. `int[]`           |
-| `Types.OBJECT_ARRAY`   | `ARRAY`                     | e.g. `java.lang.Byte[]`|
-| `Types.MAP`            | `MAP`                       | `java.util.HashMap`    |
-| `Types.MULTISET`       | `MULTISET`                  | e.g. `java.util.HashMap<String, Integer>` for a multiset of `String` |
-| `Types.ROW`            | `ROW`                       | `org.apache.flink.types.Row` |
+Please see the dedicated page about [data types](types.html).
 
 Generic types and (nested) composite types (e.g., POJOs, tuples, rows, Scala case classes) can be fields of a row as well.
 
-Fields of composite types with arbitrary nesting can be accessed with [value access functions](functions.html#value-access-functions).
+Fields of composite types with arbitrary nesting can be accessed with [value access functions]({{ site.baseurl }}/dev/table/functions/systemFunctions.html#value-access-functions).
 
-Generic types are treated as a black box and can be passed on or processed by [user-defined functions](udfs.html).
+Generic types are treated as a black box and can be passed on or processed by [user-defined functions]({{ site.baseurl }}/dev/table/functions/udfs.html).
 
 {% top %}
 
